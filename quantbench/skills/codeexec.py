@@ -17,6 +17,16 @@ def run_signal_code(code: str, data_df: pd.DataFrame) -> pd.Series:
     `code` must define `compute(df: pd.DataFrame) -> pd.Series`. Only `pd` and
     `np` are available in scope; imports are disabled.
     """
+    compute = load_signal_function(code)
+    result = compute(data_df)
+    if not isinstance(result, pd.Series):
+        raise ValueError(f"compute() must return a pandas Series, got {type(result).__name__}")
+    if len(result) != len(data_df):
+        raise ValueError(f"compute() returned {len(result)} rows, expected {len(data_df)}")
+    return result
+
+
+def load_signal_function(code: str):
     namespace: dict = {"__builtins__": _SAFE_BUILTINS, "pd": pd, "np": np}
     try:
         exec(code, namespace)  # noqa: S102 - intentional, restricted namespace above
@@ -26,10 +36,4 @@ def run_signal_code(code: str, data_df: pd.DataFrame) -> pd.Series:
     compute = namespace.get("compute")
     if not callable(compute):
         raise ValueError("signal code must define a function `compute(df) -> pd.Series`")
-
-    result = compute(data_df)
-    if not isinstance(result, pd.Series):
-        raise ValueError(f"compute() must return a pandas Series, got {type(result).__name__}")
-    if len(result) != len(data_df):
-        raise ValueError(f"compute() returned {len(result)} rows, expected {len(data_df)}")
-    return result
+    return compute

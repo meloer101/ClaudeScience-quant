@@ -9,12 +9,16 @@ from quantbench.artifact.store import ArtifactStore
 from quantbench.config import DEFAULT_COST_BPS, DEFAULT_MODEL, MAX_STEPS, RUNS_DIR
 from quantbench.data.cache import file_sha256
 from quantbench.data.exchange import SYNTHETIC_FALLBACK_SOURCE, fetch_ohlcv
+from quantbench.data.universe import UniverseDefinition, build_universe
+from quantbench.data.warehouse import fetch_universe_ohlcv
+from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
 from quantbench.engine.metrics import sanity_check_metrics
 from quantbench.engine.vectorized_backtest import run_vectorized_backtest
-from quantbench.skills.codeexec import run_signal_code
-from quantbench.skills.plot import save_drawdown_plot, save_equity_curve_plot
+from quantbench.skills.codeexec import load_signal_function, run_signal_code
+from quantbench.skills.data_quality import DataQualityReport, validate_universe_data
+from quantbench.skills.plot import save_drawdown_plot, save_equity_curve_plot, save_group_returns_plot, save_ic_plot
 from quantbench.skills.registry import Skill, SkillRegistry
-from quantbench.skills.report import build_research_note
+from quantbench.skills.report import build_cross_sectional_research_note, build_research_note
 
 
 @dataclass
@@ -104,6 +108,38 @@ RUN_SIGNAL_BACKTEST_PARAMS = {
     "required": ["code"],
 }
 
+BUILD_UNIVERSE_PARAMS = {
+    "type": "object",
+    "properties": {
+        "universe_name": {"type": "string", "description": "Universe name, currently sp500."},
+        "as_of_date": {"type": "string", "description": "YYYY-MM-DD date for the universe definition."},
+        "point_in_time": {
+            "type": "boolean",
+            "description": "Phase 1 v1 only supports false. True raises an explicit not-implemented error.",
+        },
+    },
+    "required": ["universe_name", "as_of_date"],
+}
+
+RUN_CROSS_SECTIONAL_BACKTEST_PARAMS = {
+    "type": "object",
+    "properties": {
+        "code": {
+            "type": "string",
+            "description": (
+                "Python source defining `def compute(df: pd.DataFrame) -> pd.Series`. "
+                "The function is called once per symbol and must be causal."
+            ),
+        },
+        "start": {"type": "string", "description": "YYYY-MM-DD"},
+        "end": {"type": "string", "description": "YYYY-MM-DD"},
+        "timeframe": {"type": "string", "description": "Use 1d for US equities."},
+        "n_groups": {"type": "integer", "description": "Number of factor groups, default 10."},
+        "cost_bps": {"type": "number", "description": "Round-trip trading cost in basis points. Default 5."},
+    },
+    "required": ["code", "start", "end"],
+}
+
 
 class _RunContext:
     """Mutable state threaded through one Coordinator.run() call."""
@@ -114,6 +150,10 @@ class _RunContext:
         self.cache_meta: dict[str, Any] | None = None
         self.last_metrics: dict[str, float] | None = None
         self.signal_code: str | None = None
+        self.universe: UniverseDefinition | None = None
+        self.panel_df = None
+        self.data_quality: DataQualityReport | None = None
+        self.cross_sectional = False
         self.warnings: list[str] = []
 
 
@@ -163,6 +203,78 @@ def _build_registry(ctx: _RunContext, run) -> SkillRegistry:
 
         return {**backtest.metrics, "warnings": new_warnings}
 
+    def _build_universe(universe_name: str, as_of_date: str, point_in_time: bool = False) -> dict:
+        universe = build_universe(universe_name, as_of_date, point_in_time=point_in_time)
+        ctx.universe = universe
+        run.save_text("universe.yaml", __import__("yaml").safe_dump(universe.to_dict(), sort_keys=False, allow_unicode=True))
+        ctx.warnings.append(universe.survivorship_bias_note)
+        return {
+            "name": universe.name,
+            "as_of_date": universe.as_of_date,
+            "symbols": len(universe.symbols),
+            "point_in_time": universe.point_in_time,
+            "survivorship_bias_note": universe.survivorship_bias_note,
+            "source": universe.source,
+        }
+
+    def _run_cross_sectional_backtest(
+        code: str,
+        start: str,
+        end: str,
+        timeframe: str = "1d",
+        n_groups: int = 10,
+        cost_bps: float = DEFAULT_COST_BPS,
+    ) -> dict:
+        if ctx.universe is None:
+            return {"error": "no universe loaded yet - call build_universe first"}
+
+        panel, cache_meta = fetch_universe_ohlcv(ctx.universe, timeframe, start, end)
+        ctx.panel_df = panel
+        ctx.cache_meta = cache_meta
+        ctx.data_quality = validate_universe_data(panel, ctx.universe, end=end)
+        ctx.cross_sectional = True
+
+        if ctx.data_quality.symbols_missing_entirely:
+            ctx.warnings.append(
+                f"{len(ctx.data_quality.symbols_missing_entirely)} universe symbols have no data and were excluded."
+            )
+        if ctx.data_quality.symbols_with_gaps:
+            ctx.warnings.append(f"{len(ctx.data_quality.symbols_with_gaps)} symbols have missing business-day gaps.")
+        if ctx.data_quality.suspicious_price_jumps:
+            ctx.warnings.append(
+                f"{len(ctx.data_quality.suspicious_price_jumps)} symbols have >50% one-period price jumps."
+            )
+
+        compute = load_signal_function(code)
+        backtest = run_cross_sectional_backtest(
+            panel,
+            compute,
+            n_groups=n_groups,
+            cost_bps=cost_bps,
+        )
+
+        ctx.signal_code = code
+        ctx.last_metrics = backtest.metrics
+        panel_path = run.run_dir / "panel.parquet"
+        panel.to_parquet(panel_path, index=False)
+        run.save_code("signal.py", SIGNAL_FILE_HEADER + code + SIGNAL_FILE_HARNESS)
+        run.save_json("cross_sectional_backtest_result.json", backtest.to_json_dict())
+        run.save_json("data_quality_report.json", ctx.data_quality.to_dict())
+        save_equity_curve_plot(backtest.equity_curve, run.run_dir / "equity_curve.png")
+        save_drawdown_plot(backtest.drawdown, run.run_dir / "drawdown.png")
+        save_group_returns_plot(backtest.group_returns, run.run_dir / "group_returns.png")
+        save_ic_plot(backtest.ic_series, run.run_dir / "rank_ic.png")
+
+        new_warnings = sanity_check_metrics(backtest.metrics)
+        ctx.warnings.extend(new_warnings)
+
+        return {
+            **backtest.metrics,
+            "data_quality": ctx.data_quality.to_dict(),
+            "cache": cache_meta,
+            "warnings": new_warnings,
+        }
+
     registry.register(
         Skill("fetch_ohlcv", "Fetch and cache OHLCV market data.", FETCH_OHLCV_PARAMS, _fetch_ohlcv)
     )
@@ -172,6 +284,17 @@ def _build_registry(ctx: _RunContext, run) -> SkillRegistry:
             "Run signal code against the fetched data and backtest it.",
             RUN_SIGNAL_BACKTEST_PARAMS,
             _run_signal_backtest,
+        )
+    )
+    registry.register(
+        Skill("build_universe", "Build a named equity universe such as the current S&P 500.", BUILD_UNIVERSE_PARAMS, _build_universe)
+    )
+    registry.register(
+        Skill(
+            "run_cross_sectional_backtest",
+            "Fetch a universe panel, run causal factor code per symbol, and backtest equal-weight factor groups.",
+            RUN_CROSS_SECTIONAL_BACKTEST_PARAMS,
+            _run_cross_sectional_backtest,
         )
     )
     return registry
@@ -248,15 +371,33 @@ class Coordinator:
             "model": self.model,
             "data_path": str(ctx.data_path) if ctx.data_path else None,
             "cache": ctx.cache_meta,
+            "universe": ctx.universe.to_dict() if ctx.universe else None,
         }
         run.save_config(config)
 
         metrics = ctx.last_metrics or {}
-        data_hash = f"sha256:{file_sha256(ctx.data_path)}" if ctx.data_path else "sha256:none"
+        panel_path = run.run_dir / "panel.parquet"
+        if ctx.data_path:
+            data_hash = f"sha256:{file_sha256(ctx.data_path)}"
+        elif panel_path.exists():
+            data_hash = f"sha256:{file_sha256(panel_path)}"
+        else:
+            data_hash = "sha256:none"
         code_path = run.run_dir / "signal.py"
         code_hash = f"sha256:{file_sha256(code_path)}" if code_path.exists() else "sha256:none"
 
-        note = build_research_note(run.run_id, config, metrics, data_hash, ctx.warnings, summary)
+        if ctx.cross_sectional:
+            note = build_cross_sectional_research_note(
+                run.run_id,
+                config,
+                metrics,
+                data_hash,
+                ctx.warnings,
+                summary,
+                ctx.data_quality.to_dict() if ctx.data_quality else None,
+            )
+        else:
+            note = build_research_note(run.run_id, config, metrics, data_hash, ctx.warnings, summary)
         run.save_text("research_note.md", note)
         run.save_json("conversation.json", messages)
         run.finalize(

@@ -5,6 +5,7 @@ description = "Phase 0 CLI prototype for reproducible quantitative research runs
 requires-python = ">=3.10"
 dependencies = [
   "click",
+  "duckdb",
   "litellm",
   "matplotlib",
   "numpy",

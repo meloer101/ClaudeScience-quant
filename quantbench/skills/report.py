@@ -59,3 +59,80 @@ def build_research_note(
 ## 代码
 完整可复现代码见 `signal.py`（若已生成）。
 """
+
+
+def build_cross_sectional_research_note(
+    run_id: str,
+    config: dict,
+    metrics: dict[str, float],
+    data_hash: str,
+    warnings: list[str] | None = None,
+    summary: str = "",
+    data_quality: dict | None = None,
+) -> str:
+    warnings = warnings or []
+    data_quality = data_quality or {}
+    warning_block = ""
+    if warnings:
+        bullet_list = "\n".join(f"- {w}" for w in warnings)
+        warning_block = f"""
+## ⚠️ 数据与方法警告
+{bullet_list}
+
+---
+"""
+
+    metrics_rows = "\n".join(f"| {key} | {value} |" for key, value in metrics.items())
+    cache = config.get("cache") or {}
+    universe = config.get("universe") or {}
+    quality_rows = "\n".join(
+        f"| {key} | {value if not isinstance(value, (list, dict)) else len(value)} |"
+        for key, value in data_quality.items()
+    )
+
+    return f"""# Cross-Sectional Research Note
+{warning_block}
+**Run ID:** {run_id}
+**Date:** {datetime.now(timezone.utc).date().isoformat()}
+**Model:** {config.get("model", "unknown")}
+**Hypothesis:** {config.get("hypothesis", "")}
+
+## Universe
+- 名称: {universe.get("name", "unknown")}
+- as_of_date: {universe.get("as_of_date", "unknown")}
+- point_in_time: {universe.get("point_in_time", "unknown")}
+- 成分股数量: {len(universe.get("symbols", []))}
+- 来源: {universe.get("source", "unknown")}
+- 生存者偏差说明: {universe.get("survivorship_bias_note", "")}
+
+## 数据
+- 数据来源统计: {cache.get("sources", {})}
+- 数据版本 hash: `{data_hash}`
+
+## 数据质量
+| 项 | 数值 |
+|---|---:|
+{quality_rows or "| (no data quality report) | - |"}
+
+## 结果
+| 指标 | 数值 |
+|---|---:|
+{metrics_rows or "| (no backtest was run) | - |"}
+
+## 图表
+![equity curve](equity_curve.png)
+![drawdown](drawdown.png)
+![group returns](group_returns.png)
+![rank ic](rank_ic.png)
+
+## Coordinator 总结
+{summary or "(未生成总结)"}
+
+## 局限性声明
+- Phase 1 v1 默认使用当前 S&P 500 成分股回投历史，存在生存者偏差。
+- Phase 1 只做数据质量和截面结果诊断；过拟合、未来函数和样本外审查留到 Phase 2。
+- 基础数据来自免费源，退市、收购、拆股和缺口需要结合数据质量报告判断。
+
+## 代码
+完整可复现因子代码见 `signal.py`；universe 定义见 `universe.yaml`。
+"""

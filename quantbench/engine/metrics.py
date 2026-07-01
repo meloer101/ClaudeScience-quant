@@ -37,6 +37,17 @@ def information_coefficient(signal: pd.Series, forward_returns: pd.Series) -> fl
     return 0.0 if pd.isna(corr) else float(corr)
 
 
+def monotonicity_score(values: pd.Series) -> float:
+    clean = values.replace([np.inf, -np.inf], np.nan).dropna()
+    if len(clean) < 2:
+        return 0.0
+    diffs = clean.diff().dropna()
+    if diffs.empty:
+        return 0.0
+    direction = 1 if clean.iloc[-1] >= clean.iloc[0] else -1
+    return float((diffs.mul(direction) >= 0).mean())
+
+
 # Phase 0 has no Reviewer Agent yet (see Phase 2), but a backtest this implausible
 # should never be reported without a loud caveat. These thresholds are deliberately
 # generous (real strategies essentially never clear them) so this only fires on
