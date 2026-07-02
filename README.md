@@ -1,58 +1,84 @@
 # QuantBench
 
-QuantBench is an AI workbench for quantitative research. It turns a plain-language strategy idea into a reproducible research run with data pulls, factor code, backtest metrics, charts, warnings, and an auditable artifact folder.
+<p align="center">
+  <img src="web/src/assets/hero.png" alt="QuantBench project visual" width="220" />
+</p>
 
-The goal is not to be an auto-trading bot. QuantBench is built for research: fast experiments, explicit assumptions, visible data-quality warnings, and results that can be reviewed before anyone trusts them.
+QuantBench 是一个面向量化研究者的 AI 工作台：把一句自然语言策略想法，转换成可执行、可复现、可审计的研究实验。
+
+它不是自动交易系统，也不是只会聊天的 bot。QuantBench 的目标是把量化研究中最容易丢失的部分固定下来：数据来源、因子代码、回测配置、指标、图表、警告、研究笔记，以及每次实验的 artifact 目录。
 
 ![QuantBench drawdown artifact](docs/assets/drawdown.png)
 
-## What It Does
+## 项目定位
 
-- Converts natural-language research requests into executable quantitative experiments.
-- Runs single-asset and cross-sectional backtests through a Python research engine.
-- Builds universes such as S&P 500 samples and records important caveats like survivorship bias.
-- Pulls market data through provider adapters such as `yfinance` and optional crypto exchange connectors.
-- Produces artifacts for each run, including code, config, metrics, research notes, and charts.
-- Serves a local Web workbench with session history, chat-style run output, artifact cards, and an inspector panel.
-- Highlights warnings instead of hiding them, especially around synthetic data, survivorship bias, sample truncation, and data gaps.
+QuantBench 对标的是 AI research workbench，而不是传统 notebook。用户提出一个研究问题后，系统会通过 Coordinator Agent 调用量化研究技能，完成数据拉取、因子计算、回测、质量检查、图表生成和报告归档。
 
-## Project Shape
+核心原则：
+
+- **可复现**：每次 run 都保存代码、参数、指标、图表和 manifest。
+- **可审计**：不只展示结论，也展示数据质量、样本限制和已知偏差。
+- **研究优先**：输出是研究 artifact，不是投资建议或自动下单信号。
+- **本地优先**：默认在研究者本地 Python 环境运行，适合快速迭代和调试。
+
+## 已支持能力
+
+- 自然语言触发单标的和截面量化研究。
+- Python 回测引擎，支持向量化单标的回测和 cross-sectional 因子回测。
+- 美股 universe 构建，支持 S&P 500 样本研究并显式标注 survivorship bias。
+- 数据 provider 抽象，当前包含 `yfinance` 美股数据和可选 CCXT crypto 连接器。
+- 数据缓存、DuckDB warehouse、数据质量检查和 artifact store。
+- 自动产出 metrics、research note、equity curve、drawdown 等研究产物。
+- FastAPI 后端和 React/Vite 本地 Web 工作台，用于查看 run、artifact 和警告。
+
+## 项目结构
 
 ```text
 quantbench/
-  agent/        Coordinator and LLM-facing prompts
-  api/          FastAPI endpoints for runs and artifacts
-  artifact/     Run artifact storage
-  data/         Data providers, universes, cache, and warehouse
-  engine/       Vectorized and cross-sectional backtest logic
-  skills/       Research skills: code execution, plots, reports, data quality
-web/            React + Vite local workbench
-tests/          Core, provider, API, CLI, and cross-sectional tests
+  agent/        Coordinator、LLM 封装和提示词
+  api/          FastAPI run API、状态管理和 artifact 读取
+  artifact/     每次 research run 的归档存储
+  data/         数据 provider、universe、cache 和 DuckDB warehouse
+  engine/       单标的与截面回测引擎、指标计算
+  skills/       code execution、plot、report、data quality 等研究技能
+web/            React + Vite 本地工作台
+docs/assets/    README 与文档图片资产
+tests/          CLI、API、数据层、回测引擎测试
 ```
 
-Every research run is intended to leave a trail: the user request, generated code, config, metrics, warnings, plots, and a research note live together under `runs/<run_id>/`.
+一次研究运行会落盘到 `runs/<run_id>/`，通常包含：
 
-## Quick Start
+```text
+config.yaml
+signal.py
+backtest_result.json
+equity_curve.png
+drawdown.png
+research_note.md
+manifest.json
+```
 
-Install Python dependencies:
+## 快速开始
+
+安装 Python 依赖：
 
 ```bash
 uv sync
 ```
 
-Run the CLI:
+运行 CLI：
 
 ```bash
-uv run python -m quantbench "用标普500里挑一小部分股票快速测一下动量因子的截面表现，2022到2024"
+uv run python -m quantbench "在标普500成分股里测试20日动量因子的截面表现，2022-01-01 到 2024-12-31，等权十分位多空组合"
 ```
 
-Start the API:
+启动 API：
 
 ```bash
 uv run uvicorn quantbench.api.server:app --reload
 ```
 
-Start the Web workbench:
+启动 Web 工作台：
 
 ```bash
 cd web
@@ -60,51 +86,41 @@ npm install
 npm run dev
 ```
 
-The Web UI expects the FastAPI server to be running locally.
-
-## Current Status
-
-QuantBench is an early research prototype with a working end-to-end loop:
-
-- Phase 0: single-asset research runs, artifacts, plots, reports, and tests.
-- Phase 1: cross-sectional research, S&P 500 universe support, data-quality reporting, and factor diagnostics.
-- UI phase: local FastAPI API and React workbench for browsing runs and artifacts.
-
-The screenshot artifact above comes from a small S&P 500 cross-sectional momentum test. That specific run intentionally shows strong warnings: the universe was truncated to 10 symbols and used current S&P 500 constituents across history, so it is not point-in-time and is not representative of the whole index.
+Web UI 默认连接本地 FastAPI 服务。
 
 ## Roadmap
 
-### Near Term
+### 近期
 
-- Finish the local Web workbench polish: loading states, failed-run states, empty states, and artifact previews for more file types.
-- Add streaming run progress with server-sent events or WebSocket updates.
-- Improve run comparison so users can inspect multiple experiment variants side by side.
-- Add stronger API and UI tests around artifact rendering and run status transitions.
+- 打磨 Web 工作台的加载态、失败态、空状态和 artifact 预览。
+- 完成运行进度的实时展示，支持 SSE 或 WebSocket 事件流。
+- 增强 run comparison，支持多次实验结果并排检查。
+- 补齐 API 和 UI 的端到端测试。
 
-### Research Quality
+### 研究质量
 
-- Add a Reviewer Agent for look-ahead checks, overfitting diagnostics, cost sensitivity, out-of-sample decay, and regime dependence.
-- Add point-in-time universe support to reduce survivorship bias in equity research.
-- Add parameter stability sweeps and automatic stress tests.
-- Expand data-quality checks for corporate actions, delistings, splits, missing sessions, and suspicious jumps.
+- 引入 Reviewer Agent，自动检查未来函数、过拟合、手续费敏感性、样本外衰减和 regime dependency。
+- 支持 point-in-time universe，降低历史成分股回测中的 survivorship bias。
+- 增加参数稳定性扫描、stress test 和 out-of-sample diagnostics。
+- 扩展数据质量检查，覆盖公司行为、退市、拆股、缺失交易日和异常跳变。
 
-### Data And Execution
+### 数据与执行
 
-- Add durable dataset versioning with clearer cache provenance.
-- Support more providers for equities, crypto, futures, macro, and alternative data.
-- Introduce optional sandboxed execution for user-defined research code.
-- Add exportable experiment bundles for sharing and later reproduction.
+- 增强 dataset versioning 和 cache provenance。
+- 接入更多资产类别：equities、crypto、futures、macro 和 alternative data。
+- 为用户自定义研究代码提供可选沙箱执行环境。
+- 支持可导出的 experiment bundle，方便分享和复现实验。
 
-### Product Direction
+### 产品方向
 
-- Support experiment forking from any prior run.
-- Build a searchable experiment library across hypotheses, metrics, warnings, and artifacts.
-- Add richer native visualizations for equity curves, drawdowns, IC, group returns, and risk attribution.
-- Add multi-session workflows for comparing strategies and research branches.
+- 支持从任意历史 run fork 出新实验。
+- 建立 experiment library，按假设、因子、指标、警告和 artifact 搜索。
+- 增加更丰富的原生可视化：IC、分层收益、风险归因、回撤拆解等。
+- 支持多 session 研究工作流，方便比较策略分支和研究路径。
 
-## Risk Statement
+## 风险声明
 
-QuantBench outputs are research artifacts, not investment advice. Backtests can be wrong because of survivorship bias, look-ahead bias, data issues, unrealistic costs, overfitting, and market-regime dependence. Treat every result as something to review, reproduce, and stress-test before making decisions.
+QuantBench 生成的是研究产物，不是投资建议。任何回测都可能受到 survivorship bias、look-ahead bias、数据质量、交易成本假设、过拟合和市场状态变化影响。所有结果都应该被复核、复现和压力测试后再用于真实决策。
 
 ## License
 
