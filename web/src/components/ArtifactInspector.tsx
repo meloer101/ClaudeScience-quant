@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import Markdown from "react-markdown";
 import Papa from "papaparse";
-import type { ArtifactInfo } from "../types";
-import { artifactUrl } from "../api/client";
+import type { ArtifactInfo, ParquetPreview } from "../types";
+import { artifactUrl, previewParquet } from "../api/client";
+import { ChartsPanel } from "./ChartsPanel";
 
 function FileIcon() {
   return (
@@ -33,7 +34,7 @@ interface ArtifactInspectorProps {
 }
 
 function useArtifactText(runId: string | null, artifact: ArtifactInfo | null) {
-  const needsText = artifact && artifact.kind !== "image" && artifact.kind !== "binary";
+  const needsText = artifact && artifact.kind !== "image" && artifact.kind !== "binary" && artifact.kind !== "chart-dashboard";
   return useQuery({
     queryKey: ["artifact-text", runId, artifact?.filename],
     queryFn: async () => {
@@ -42,6 +43,46 @@ function useArtifactText(runId: string | null, artifact: ArtifactInfo | null) {
     },
     enabled: Boolean(runId && needsText),
   });
+}
+
+function DataTable({
+  headers,
+  rows,
+  truncatedNote,
+}: {
+  headers: string[];
+  rows: (string | number)[][];
+  truncatedNote?: string;
+}) {
+  if (rows.length === 0) return <div className="text-warm-400 text-sm">Empty file.</div>;
+
+  return (
+    <div className="overflow-auto">
+      <table className="text-xs border-collapse w-full">
+        <thead>
+          <tr>
+            {headers.map((cell, i) => (
+              <th key={i} className="border border-warm-100 bg-warm-50 px-2 py-1 text-left sticky top-0 font-medium text-warm-700">
+                {cell}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri}>
+              {row.map((cell, ci) => (
+                <td key={ci} className="border border-warm-100 px-2 py-1 whitespace-nowrap text-warm-800">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {truncatedNote && <div className="text-xs text-warm-400 mt-2">{truncatedNote}</div>}
+    </div>
+  );
 }
 
 function CsvTable({ text }: { text: string }) {
@@ -53,46 +94,65 @@ function CsvTable({ text }: { text: string }) {
   const visibleBody = truncated ? body.slice(0, 200) : body;
 
   return (
-    <div className="overflow-auto">
-      <table className="text-xs border-collapse w-full">
-        <thead>
-          <tr>
-            {header.map((cell, i) => (
-              <th key={i} className="border border-warm-100 bg-warm-50 px-2 py-1 text-left sticky top-0 font-medium text-warm-700">
-                {cell}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {visibleBody.map((row, ri) => (
-            <tr key={ri}>
-              {row.map((cell, ci) => (
-                <td key={ci} className="border border-warm-100 px-2 py-1 whitespace-nowrap text-warm-800">
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {truncated && (
-        <div className="text-xs text-warm-400 mt-2">
-          Showing first 200 of {body.length} rows. Download for the full file.
-        </div>
-      )}
-    </div>
+    <DataTable
+      headers={header}
+      rows={visibleBody}
+      truncatedNote={truncated ? `Showing first 200 of ${body.length} rows. Download for the full file.` : undefined}
+    />
   );
+}
+
+function ParquetTable({ runId, filename }: { runId: string; filename: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["parquet-preview", runId, filename],
+    queryFn: () => previewParquet(runId, filename),
+  });
+
+  if (isLoading) return <div className="text-sm text-warm-400">Loading…</div>;
+  if (error || !data) return <div className="text-sm text-danger-600">Failed to preview this file.</div>;
+
+  const preview = data as ParquetPreview;
+  const rows = preview.rows.map((row) => preview.columns.map((column) => formatCell(row[column])));
+
+  return (
+    <DataTable
+      headers={preview.columns}
+      rows={rows}
+      truncatedNote={
+        preview.truncated ? `Showing first ${preview.rows.length} of ${preview.total_rows} rows. Download for the full file.` : undefined
+      }
+    />
+  );
+}
+
+function formatCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function tabLabel(artifact: ArtifactInfo): string {
+  return artifact.kind === "chart-dashboard" ? "Interactive Charts" : artifact.filename;
 }
 
 function ArtifactBody({ runId, artifact }: { runId: string; artifact: ArtifactInfo }) {
   const { data: text, isLoading } = useArtifactText(runId, artifact);
   const url = artifactUrl(runId, artifact.filename);
+  const isParquet = artifact.kind === "binary" && artifact.filename.endsWith(".parquet");
+
+  if (artifact.kind === "chart-dashboard") {
+    return (
+      <div className="flex-1 overflow-auto">
+        <ChartsPanel runId={runId} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-auto p-4">
       {artifact.kind === "image" && <img src={url} alt={artifact.filename} className="w-full rounded-lg" />}
-      {artifact.kind === "binary" && (
+      {isParquet && <ParquetTable runId={runId} filename={artifact.filename} />}
+      {artifact.kind === "binary" && !isParquet && (
         <div className="text-sm text-warm-500">
           这个文件太大或不适合直接预览，
           <a href={url} download={artifact.filename} className="text-accent-600 underline ml-1">
@@ -143,17 +203,17 @@ export function ArtifactInspector({ tabs, activeKey, onSelectTab, onCloseTab, wi
             className={`flex items-center gap-1.5 pl-2.5 pr-2 py-1.5 text-xs rounded-lg cursor-pointer max-w-36 shrink-0 transition-colors ${
               tab.key === activeKey ? "bg-warm-100 text-warm-900" : "text-warm-500 hover:bg-warm-100/60"
             }`}
-            title={tab.artifact.filename}
+            title={tabLabel(tab.artifact)}
           >
             <FileIcon />
-            <span className="truncate">{tab.artifact.filename}</span>
+            <span className="truncate">{tabLabel(tab.artifact)}</span>
             <button
               onClick={(event) => {
                 event.stopPropagation();
                 onCloseTab(tab.key);
               }}
               className="text-warm-400 hover:text-warm-700 shrink-0 leading-none w-3.5 text-center"
-              aria-label={`Close ${tab.artifact.filename}`}
+              aria-label={`Close ${tabLabel(tab.artifact)}`}
             >
               ×
             </button>
@@ -164,14 +224,16 @@ export function ArtifactInspector({ tabs, activeKey, onSelectTab, onCloseTab, wi
         <>
           <div className="flex items-center justify-between px-3.5 py-2 border-b border-warm-100 shrink-0">
             <span className="text-xs text-warm-400">{activeTab.artifact.kind}</span>
-            <a
-              href={artifactUrl(activeTab.runId, activeTab.artifact.filename)}
-              download={activeTab.artifact.filename}
-              className="text-xs text-warm-500 hover:text-warm-800"
-              title="Download"
-            >
-              Download
-            </a>
+            {activeTab.artifact.kind !== "chart-dashboard" && (
+              <a
+                href={artifactUrl(activeTab.runId, activeTab.artifact.filename)}
+                download={activeTab.artifact.filename}
+                className="text-xs text-warm-500 hover:text-warm-800"
+                title="Download"
+              >
+                Download
+              </a>
+            )}
           </div>
           <ArtifactBody runId={activeTab.runId} artifact={activeTab.artifact} />
         </>

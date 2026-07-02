@@ -9,6 +9,8 @@ interface ChatMessageProps {
   liveEvents: RunEvent[];
   selectedFilename: string | null;
   onSelectArtifact: (filename: string) => void;
+  onOpenCharts?: () => void;
+  isChartsSelected?: boolean;
 }
 
 function MetricsTable({ metrics }: { metrics: Record<string, number> }) {
@@ -30,7 +32,8 @@ function MetricsTable({ metrics }: { metrics: Record<string, number> }) {
   );
 }
 
-export function ChatMessage({ run, liveEvents, selectedFilename, onSelectArtifact }: ChatMessageProps) {
+export function ChatMessage({ run, liveEvents, selectedFilename, onSelectArtifact, onOpenCharts, isChartsSelected }: ChatMessageProps) {
+  const hasBacktestResult = run.artifacts.some((artifact) => artifact.filename === "backtest_result.json");
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
@@ -59,6 +62,8 @@ export function ChatMessage({ run, liveEvents, selectedFilename, onSelectArtifac
               artifacts={run.artifacts}
               selectedFilename={selectedFilename}
               onSelect={onSelectArtifact}
+              onOpenCharts={hasBacktestResult ? onOpenCharts : undefined}
+              isChartsSelected={isChartsSelected}
             />
           </>
         )}

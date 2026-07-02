@@ -26,6 +26,11 @@ function artifactKey(runId: string, filename: string): string {
   return `${runId}::${filename}`;
 }
 
+// The Interactive Charts tab isn't backed by a real file (see types.ts
+// ArtifactKind), so it needs a fixed synthetic filename/key rather than one
+// derived from run_reader.list_artifacts.
+const CHARTS_FILENAME = "__charts__";
+
 function App() {
   const queryClient = useQueryClient();
   const [openTabs, setOpenTabs] = useState<string[]>([]);
@@ -144,6 +149,24 @@ function App() {
     setActiveArtifactKey(key);
   };
 
+  const handleOpenCharts = () => {
+    if (!activeRunId) return;
+    const key = artifactKey(activeRunId, CHARTS_FILENAME);
+    setOpenArtifactTabs((prev) =>
+      prev.some((tab) => tab.key === key)
+        ? prev
+        : [
+            ...prev,
+            {
+              key,
+              runId: activeRunId,
+              artifact: { filename: CHARTS_FILENAME, kind: "chart-dashboard", size_bytes: 0 },
+            },
+          ],
+    );
+    setActiveArtifactKey(key);
+  };
+
   const closeArtifactTab = (key: string) => {
     setOpenArtifactTabs((prev) => {
       const index = prev.findIndex((tab) => tab.key === key);
@@ -206,6 +229,8 @@ function App() {
               activeArtifactKey ? openArtifactTabs.find((tab) => tab.key === activeArtifactKey)?.artifact.filename ?? null : null
             }
             onSelectArtifact={handleSelectArtifact}
+            onOpenCharts={handleOpenCharts}
+            isChartsSelected={activeArtifactKey === (activeRunId ? artifactKey(activeRunId, CHARTS_FILENAME) : null)}
             onSubmit={handleSubmit}
             compareRunIds={compareRunIds}
             onClearCompare={() => setCompareRunIds([])}
