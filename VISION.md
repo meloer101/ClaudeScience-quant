@@ -353,6 +353,8 @@ def compute_momentum(data, lookback=24, vol_filter=True):
 ## 七、迭代计划
 
 > **执行顺序调整（Phase 1 完成后）：** 原计划 Phase 2（Reviewer Agent）顺延，Phase UI（原 Phase 4 可视化与 UI 的核心部分）提前执行，详见 [PHASE_UI.md](PHASE_UI.md)。理由：Phase 0/1 产出的 artifact 已经过多轮 bug 修复、有警告护栏，值得先让它们在真正的 Web 工作台里被看见，而不是继续堆在终端和文件夹里；这个调整不影响"先正确性、后体验"的整体原则——Reviewer Agent 仍是下一个要做的审查能力。
+>
+> **Phase 2 完成（详细计划见 [PHASE2.md](PHASE2.md)）：** Reviewer 现在挂在 Coordinator 的 backtest 成功路径上自动运行，不是模型可选调用的工具，输出确定性、可测试的 verdict（STRONG/PROMISING/WEAK/REJECTED）。落地后用真实美股数据（而不只是合成 fixture）做了一轮校准，改掉了两处会让 Reviewer 结论不可信的问题：样本外符号翻转检查在训练期 Sharpe 偏低时会漏判；极端交易依赖检查原先用"剔除最赚钱的 5% 交易日后复利重算净值"，在多年期日频序列上无论策略好坏都会衰减到接近 -100%（纯数学的复利假象，不是真实信号），已改为不复利的"贡献占比"口径。
 
 ### Phase 0: 骨架 (Week 1)
 **目标：一个能跑通的最小闭环**
@@ -382,12 +384,12 @@ def compute_momentum(data, lookback=24, vol_filter=True):
 ### Phase 2: Reviewer Agent (Week 4-5)
 **目标：自动化研究审查**
 
-- [ ] 未来函数检测（代码静态分析）
-- [ ] 样本外自动切分与对比
-- [ ] 手续费敏感性分析
-- [ ] 参数稳定性检查
-- [ ] Regime 依赖分析
-- [ ] 审查报告自动生成
+- [x] 未来函数检测（代码静态分析）
+- [x] 样本外自动切分与对比
+- [x] 手续费敏感性分析
+- [x] 参数稳定性检查
+- [x] Regime 依赖分析
+- [x] 审查报告自动生成
 
 **验收标准：** 给一个故意包含未来函数的因子，Reviewer 能检测到并报告。给一个过拟合的因子，能指出参数不稳定。
 

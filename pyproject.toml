@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "quantbench"
 version = "0.1.0"
@@ -23,5 +27,11 @@ dependencies = [
 [project.optional-dependencies]
 live = ["ccxt"]
 
+[dependency-groups]
+dev = ["pytest"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["quantbench"]

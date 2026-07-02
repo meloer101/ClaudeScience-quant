@@ -8,6 +8,7 @@ def build_research_note(
     data_hash: str,
     warnings: list[str] | None = None,
     summary: str = "",
+    review_markdown: str = "",
 ) -> str:
     warnings = warnings or []
     warning_block = ""
@@ -46,15 +47,15 @@ def build_research_note(
 {metrics_rows}
 
 {chart_block}
+## Reviewer 审查报告
+{review_markdown or "(未运行 Reviewer 审查)"}
+
 ## Coordinator 总结
 {summary or "(未生成总结)"}
 
-## 局限性声明（Phase 0 尚未做完整审查）
-以下问题尚未做自动检查（Phase 2 的 Reviewer Agent 会覆盖）：
-- 样本外表现是否衰减
-- 手续费敏感性
-- 参数稳定性
-- 是否依赖极端行情或少数交易
+## 局限性声明
+- Reviewer 是确定性启发式检查，不是形式化证明；未被标记不代表没有过拟合或未来函数。
+- 基础数据来自免费源，数据缺口、复权、退市与 survivorship bias 仍需人工结合上下文判断。
 
 ## 代码
 完整可复现代码见 `signal.py`（若已生成）。
@@ -69,6 +70,7 @@ def build_cross_sectional_research_note(
     warnings: list[str] | None = None,
     summary: str = "",
     data_quality: dict | None = None,
+    review_markdown: str = "",
 ) -> str:
     warnings = warnings or []
     data_quality = data_quality or {}
@@ -125,12 +127,15 @@ def build_cross_sectional_research_note(
 ![group returns](group_returns.png)
 ![rank ic](rank_ic.png)
 
+## Reviewer 审查报告
+{review_markdown or "(未运行 Reviewer 审查)"}
+
 ## Coordinator 总结
 {summary or "(未生成总结)"}
 
 ## 局限性声明
 - Phase 1 v1 默认使用当前 S&P 500 成分股回投历史，存在生存者偏差。
-- Phase 1 只做数据质量和截面结果诊断；过拟合、未来函数和样本外审查留到 Phase 2。
+- Reviewer 是确定性启发式检查，不是形式化证明；未被标记不代表没有过拟合或未来函数。
 - 基础数据来自免费源，退市、收购、拆股和缺口需要结合数据质量报告判断。
 
 ## 代码

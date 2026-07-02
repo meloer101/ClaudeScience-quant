@@ -73,6 +73,7 @@ class Run:
         conversation_log: str | None = None,
         summary: str = "",
         metrics: dict[str, Any] | None = None,
+        review: dict[str, Any] | None = None,
     ) -> Path:
         manifest = {
             "run_id": self.run_id,
@@ -82,6 +83,7 @@ class Run:
             "model": model,
             "summary": summary,
             "metrics": metrics or {},
+            "review": review,
             "data_hash": data_hash,
             "code_hash": code_hash,
             "warnings": warnings or [],
