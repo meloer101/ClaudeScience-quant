@@ -112,6 +112,44 @@ def test_get_run_detail_404_for_unknown_run(client):
     assert response.status_code == 404
 
 
+def test_get_backtest_result_endpoint_returns_json(tmp_path, client):
+    _write_fake_completed_run(tmp_path)
+
+    response = client.get("/api/runs/run_20260701_000000_aaaa/backtest-result")
+
+    assert response.status_code == 200
+    assert response.json() == {"metrics": {"sharpe": 1.1}}
+
+
+def test_get_backtest_result_falls_back_to_legacy_cross_sectional_filename(tmp_path, client):
+    """Regression: cross-sectional runs used to save their result as
+    "cross_sectional_backtest_result.json" before that was unified with the
+    single-symbol path's "backtest_result.json". Historical run directories
+    on disk still use the old name, and the ChartsPanel/Compare correlation
+    must still be able to read them - not just runs created after the fix."""
+    run_id = "run_20260630_000000_legacy"
+    run_dir = tmp_path / run_id
+    run_dir.mkdir()
+    (run_dir / "manifest.json").write_text(json.dumps({"run_id": run_id}), encoding="utf-8")
+    (run_dir / "cross_sectional_backtest_result.json").write_text(
+        json.dumps({"metrics": {"sharpe": 0.8}, "series": {"timestamp": [], "long_short_returns": []}}),
+        encoding="utf-8",
+    )
+
+    response = client.get(f"/api/runs/{run_id}/backtest-result")
+
+    assert response.status_code == 200
+    assert response.json()["metrics"] == {"sharpe": 0.8}
+
+
+def test_get_backtest_result_404_when_missing(tmp_path, client):
+    tmp_path.joinpath("run_20260701_000000_empty").mkdir()
+
+    response = client.get("/api/runs/run_20260701_000000_empty/backtest-result")
+
+    assert response.status_code == 404
+
+
 def test_get_artifact_serves_file_content(tmp_path, client):
     _write_fake_completed_run(tmp_path)
 
@@ -125,6 +163,86 @@ def test_get_artifact_rejects_path_traversal(tmp_path, client):
     _write_fake_completed_run(tmp_path)
 
     response = client.get("/api/runs/run_20260701_000000_aaaa/artifacts/..%2F..%2Fetc%2Fpasswd")
+
+    assert response.status_code in (400, 404)
+
+
+def test_get_artifact_preview_returns_first_rows_of_parquet(tmp_path, client):
+    import pandas as pd
+
+    run_dir = _write_fake_completed_run(tmp_path)
+    frame = pd.DataFrame({"symbol": [f"SYM{i}" for i in range(250)], "value": range(250)})
+    frame.to_parquet(run_dir / "panel.parquet")
+
+    response = client.get("/api/runs/run_20260701_000000_aaaa/artifacts/panel.parquet/preview")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["columns"] == ["symbol", "value"]
+    assert len(body["rows"]) == 200
+    assert body["rows"][0] == {"symbol": "SYM0", "value": 0}
+    assert body["total_rows"] == 250
+    assert body["truncated"] is True
+
+
+def test_parquet_preview_does_not_materialize_full_file_into_pandas(tmp_path, monkeypatch):
+    """Regression: preview_parquet() used to call pd.read_parquet(path) (the
+    whole file) before slicing to 200 rows, so a large multi-symbol
+    panel.parquet would be fully loaded into memory just to preview a
+    handful of rows. It must now get total_rows from Parquet metadata and
+    only decode the row groups it needs - i.e. never call pd.read_parquet
+    on the full path at all."""
+    import pandas as pd
+
+    from quantbench.api import run_reader
+
+    monkeypatch.setattr(run_reader, "RUNS_DIR", tmp_path)
+    run_dir = tmp_path / "run_preview_test"
+    run_dir.mkdir()
+    frame = pd.DataFrame({"symbol": [f"SYM{i}" for i in range(600)], "value": range(600)})
+    # Small row groups so a 200-row preview must span multiple groups without
+    # forcing every group to be read - exercises the early-stop logic, not
+    # just the case where one row group already covers the whole file.
+    frame.to_parquet(run_dir / "panel.parquet", row_group_size=50)
+
+    original_read_parquet = pd.read_parquet
+    monkeypatch.setattr(
+        pd,
+        "read_parquet",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("preview_parquet must not call pd.read_parquet on the full file")),
+    )
+    try:
+        preview = run_reader.preview_parquet("run_preview_test", "panel.parquet")
+    finally:
+        monkeypatch.setattr(pd, "read_parquet", original_read_parquet)
+
+    assert preview["total_rows"] == 600
+    assert preview["truncated"] is True
+    assert len(preview["rows"]) == 200
+    assert preview["rows"][0] == {"symbol": "SYM0", "value": 0}
+    assert preview["rows"][-1] == {"symbol": "SYM199", "value": 199}
+
+
+def test_get_artifact_preview_404_for_missing_file(tmp_path, client):
+    _write_fake_completed_run(tmp_path)
+
+    response = client.get("/api/runs/run_20260701_000000_aaaa/artifacts/does_not_exist.parquet/preview")
+
+    assert response.status_code == 404
+
+
+def test_get_artifact_preview_rejects_non_parquet(tmp_path, client):
+    _write_fake_completed_run(tmp_path)
+
+    response = client.get("/api/runs/run_20260701_000000_aaaa/artifacts/research_note.md/preview")
+
+    assert response.status_code == 400
+
+
+def test_get_artifact_preview_rejects_path_traversal(tmp_path, client):
+    _write_fake_completed_run(tmp_path)
+
+    response = client.get("/api/runs/run_20260701_000000_aaaa/artifacts/..%2F..%2Fetc%2Fpasswd/preview")
 
     assert response.status_code in (400, 404)
 
@@ -308,6 +426,15 @@ def test_library_api_summary_compare_and_lineage(tmp_path, client):
     compare_response = client.get("/api/compare?run_ids=run_20260701_000000_a,run_20260701_000001_b")
     assert compare_response.status_code == 200
     assert compare_response.json()["metrics"]["sharpe"]["run_20260701_000001_b"] == 1.4
+    # Phase 4: /api/compare also carries a returns_correlation matrix. Neither
+    # fixture run has a backtest_result.json, so every cell must be null
+    # (missing data), not a fabricated number - and the key must still exist
+    # so the frontend doesn't have to special-case its absence.
+    correlation = compare_response.json()["returns_correlation"]
+    assert correlation["run_20260701_000000_a"]["run_20260701_000001_b"] is None
+
+    single_run_compare = client.get("/api/compare?run_ids=run_20260701_000000_a")
+    assert single_run_compare.json()["returns_correlation"] == {}
 
     lineage_response = client.get("/api/runs/run_20260701_000001_b/lineage")
     assert lineage_response.status_code == 200

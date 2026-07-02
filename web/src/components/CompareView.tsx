@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { compareRuns } from "../api/client";
+import { CorrelationMatrix } from "./charts/CorrelationMatrix";
 
 interface CompareViewProps {
   runIds: string[];
@@ -66,6 +67,12 @@ export function CompareView({ runIds, onClear }: CompareViewProps) {
               ))}
             </tbody>
           </table>
+          {data.run_ids.length >= 2 && (
+            <div className="mt-3">
+              <div className="text-xs font-medium text-warm-700 mb-1.5">Returns Correlation</div>
+              <CorrelationMatrix runIds={data.run_ids} matrix={data.returns_correlation} labels={data.hypotheses} />
+            </div>
+          )}
         </div>
       )}
     </div>

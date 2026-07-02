@@ -1,4 +1,13 @@
-import type { CompareTable, ExperimentRecord, LineageResult, RunDetail, RunSummary } from "../types";
+import type {
+  BacktestResultPayload,
+  CompareTable,
+  ExperimentRecord,
+  LineageResult,
+  ParquetPreview,
+  ReviewReportPayload,
+  RunDetail,
+  RunSummary,
+} from "../types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
@@ -69,4 +78,30 @@ export function artifactUrl(runId: string, filename: string): string {
 
 export function runEventsUrl(runId: string): string {
   return `/api/runs/${encodeURIComponent(runId)}/events`;
+}
+
+async function fetchArtifactJson<T>(runId: string, filename: string): Promise<T | null> {
+  const response = await fetch(artifactUrl(runId, filename));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json() as Promise<T>;
+}
+
+export async function getBacktestResult(runId: string): Promise<BacktestResultPayload | null> {
+  // Not a direct artifact-by-filename fetch: some historical cross-sectional
+  // runs wrote a different filename before it was unified with the
+  // single-symbol path (see run_reader.read_backtest_result on the backend).
+  // This endpoint resolves either name so the frontend never has to guess.
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/backtest-result`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json() as Promise<BacktestResultPayload>;
+}
+
+export function getReviewReport(runId: string): Promise<ReviewReportPayload | null> {
+  return fetchArtifactJson<ReviewReportPayload>(runId, "review_report.json");
+}
+
+export function previewParquet(runId: string, filename: string): Promise<ParquetPreview> {
+  return request<ParquetPreview>(`/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(filename)}/preview`);
 }

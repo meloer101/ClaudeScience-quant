@@ -12,6 +12,8 @@ interface ChatPaneProps {
   liveEvents: RunEvent[];
   selectedFilename: string | null;
   onSelectArtifact: (filename: string) => void;
+  onOpenCharts?: () => void;
+  isChartsSelected?: boolean;
   onSubmit: (request: string) => Promise<void>;
   compareRunIds: string[];
   onClearCompare: () => void;
@@ -25,6 +27,8 @@ export function ChatPane({
   liveEvents,
   selectedFilename,
   onSelectArtifact,
+  onOpenCharts,
+  isChartsSelected,
   onSubmit,
   compareRunIds,
   onClearCompare,
@@ -50,6 +54,8 @@ export function ChatPane({
               liveEvents={liveEvents}
               selectedFilename={selectedFilename}
               onSelectArtifact={onSelectArtifact}
+              onOpenCharts={onOpenCharts}
+              isChartsSelected={isChartsSelected}
             />
             <RunLineage runId={run.run_id} />
             {run.status === "completed" && <ForkRunForm runId={run.run_id} onForked={onForked} />}
