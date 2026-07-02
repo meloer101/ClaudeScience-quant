@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from quantbench.agent.llm import LLMClient
 from quantbench.agent.prompts import SYSTEM_PROMPT
 from quantbench.artifact.store import ArtifactStore
@@ -15,6 +17,7 @@ from quantbench.data.warehouse import fetch_universe_ohlcv
 from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
 from quantbench.engine.metrics import sanity_check_metrics
 from quantbench.engine.vectorized_backtest import run_vectorized_backtest
+from quantbench.review import ReviewReport, run_review
 from quantbench.skills.codeexec import load_signal_function, run_signal_code
 from quantbench.skills.data_quality import DataQualityReport, validate_universe_data
 from quantbench.skills.plot import save_drawdown_plot, save_equity_curve_plot, save_group_returns_plot, save_ic_plot
@@ -181,6 +184,8 @@ class _RunContext:
         self.data_quality: DataQualityReport | None = None
         self.cross_sectional = False
         self.warnings: list[str] = []
+        self.fetch_params: dict[str, str] | None = None
+        self.review_report: ReviewReport | None = None
 
 
 def _build_registry(ctx: _RunContext, run) -> SkillRegistry:
@@ -189,6 +194,7 @@ def _build_registry(ctx: _RunContext, run) -> SkillRegistry:
     def _fetch_ohlcv(symbol: str, timeframe: str, start: str, end: str) -> dict:
         data_path, data_df, cache_meta = fetch_ohlcv(symbol, timeframe, start, end)
         ctx.data_path, ctx.data_df, ctx.cache_meta = data_path, data_df, cache_meta
+        ctx.fetch_params = {"symbol": symbol, "timeframe": timeframe, "start": start, "end": end}
 
         if cache_meta.get("source") == SYNTHETIC_FALLBACK_SOURCE:
             ctx.warnings.append(
@@ -225,9 +231,24 @@ def _build_registry(ctx: _RunContext, run) -> SkillRegistry:
         save_drawdown_plot(backtest.drawdown, run.run_dir / "drawdown.png")
 
         new_warnings = sanity_check_metrics(backtest.metrics)
+        review_report = run_review(
+            code=code,
+            returns=backtest.returns,
+            cost_bps=cost_bps,
+            rerun_at_cost=lambda bps: run_vectorized_backtest(ctx.data_df, signal, cost_bps=bps).metrics,
+            rerun_with_code=lambda candidate: _rerun_single_with_code(candidate, ctx.data_df, cost_bps),
+            out_of_sample_data=ctx.data_df,
+            run_on_data=lambda data: _rerun_single_with_code(code, data, cost_bps) or {},
+            benchmark_returns=_fetch_benchmark_returns(ctx.fetch_params, ctx.data_df),
+            turnover_annual=backtest.metrics.get("turnover_annual"),
+        )
+        ctx.review_report = review_report
+        run.save_json("review_report.json", review_report.to_dict())
+        review_warnings = _review_warning_messages(review_report)
+        new_warnings.extend(review_warnings)
         ctx.warnings.extend(new_warnings)
 
-        return {**backtest.metrics, "warnings": new_warnings}
+        return {**backtest.metrics, "warnings": new_warnings, "review": review_report.to_dict()}
 
     def _build_universe(
         universe_name: str, as_of_date: str, point_in_time: bool = False, limit: int | None = None
@@ -295,6 +316,23 @@ def _build_registry(ctx: _RunContext, run) -> SkillRegistry:
         save_ic_plot(backtest.ic_series, run.run_dir / "rank_ic.png")
 
         new_warnings = sanity_check_metrics(backtest.metrics)
+        review_report = run_review(
+            code=code,
+            returns=backtest.returns,
+            cost_bps=cost_bps,
+            rerun_at_cost=lambda bps: run_cross_sectional_backtest(panel, compute, n_groups=n_groups, cost_bps=bps).metrics,
+            rerun_with_code=lambda candidate: _rerun_cross_with_code(candidate, panel, n_groups, cost_bps),
+            out_of_sample_data=panel,
+            run_on_data=lambda data: _rerun_cross_with_code(code, data, n_groups, cost_bps) or {},
+            benchmark_returns=_fetch_benchmark_returns({"symbol": "SPY", "timeframe": timeframe, "start": start, "end": end}, None),
+            factor_panel=backtest.factor_panel,
+            n_groups=n_groups,
+            turnover_annual=backtest.metrics.get("turnover_annual"),
+        )
+        ctx.review_report = review_report
+        run.save_json("review_report.json", review_report.to_dict())
+        review_warnings = _review_warning_messages(review_report)
+        new_warnings.extend(review_warnings)
         ctx.warnings.extend(new_warnings)
 
         return {
@@ -302,6 +340,7 @@ def _build_registry(ctx: _RunContext, run) -> SkillRegistry:
             "data_quality": ctx.data_quality.to_dict(),
             "cache": cache_meta,
             "warnings": new_warnings,
+            "review": review_report.to_dict(),
         }
 
     registry.register(
@@ -461,9 +500,18 @@ class Coordinator:
                 ctx.warnings,
                 summary,
                 ctx.data_quality.to_dict() if ctx.data_quality else None,
+                ctx.review_report.to_markdown() if ctx.review_report else "",
             )
         else:
-            note = build_research_note(run.run_id, config, metrics, data_hash, ctx.warnings, summary)
+            note = build_research_note(
+                run.run_id,
+                config,
+                metrics,
+                data_hash,
+                ctx.warnings,
+                summary,
+                ctx.review_report.to_markdown() if ctx.review_report else "",
+            )
         run.save_text("research_note.md", note)
         run.save_json("conversation.json", messages)
         run.finalize(
@@ -474,6 +522,7 @@ class Coordinator:
             conversation_log="conversation.json",
             summary=summary,
             metrics=metrics,
+            review=ctx.review_report.to_dict() if ctx.review_report else None,
         )
 
         return RunResult(
@@ -483,3 +532,51 @@ class Coordinator:
             warnings=ctx.warnings,
             summary=summary,
         )
+
+
+def _rerun_single_with_code(code: str, data_df, cost_bps: float) -> dict[str, float] | None:
+    try:
+        signal = run_signal_code(code, data_df)
+        return run_vectorized_backtest(data_df, signal, cost_bps=cost_bps).metrics
+    except Exception:
+        return None
+
+
+def _rerun_cross_with_code(code: str, panel, n_groups: int, cost_bps: float) -> dict[str, float] | None:
+    try:
+        compute = load_signal_function(code)
+        return run_cross_sectional_backtest(panel, compute, n_groups=n_groups, cost_bps=cost_bps).metrics
+    except Exception:
+        return None
+
+
+def _fetch_benchmark_returns(fetch_params: dict[str, str] | None, current_df) -> Any:
+    if not fetch_params:
+        return None
+    symbol = fetch_params.get("symbol", "")
+    benchmark = "BTC/USDT" if "/" in symbol else "SPY"
+    try:
+        if current_df is not None and symbol == benchmark:
+            benchmark_df = current_df
+        else:
+            _, benchmark_df, _ = fetch_ohlcv(
+                benchmark,
+                fetch_params.get("timeframe", "1d"),
+                fetch_params.get("start", ""),
+                fetch_params.get("end", ""),
+            )
+        returns = benchmark_df["close"].pct_change()
+        returns.index = pd.to_datetime(benchmark_df["timestamp"], utc=True)
+        return returns
+    except Exception:
+        return None
+
+
+def _review_warning_messages(review_report: ReviewReport) -> list[str]:
+    messages: list[str] = []
+    if review_report.verdict in {"WEAK", "REJECTED"}:
+        messages.append(f"Reviewer verdict: {review_report.verdict} - {review_report.verdict_reason}")
+    for finding in review_report.findings:
+        if finding.severity in {"critical", "warning"}:
+            messages.append(f"Reviewer {finding.severity.upper()} [{finding.check}]: {finding.message}")
+    return messages

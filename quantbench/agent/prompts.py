@@ -65,7 +65,9 @@ answer that:
 - Explicitly repeats any warning-like content from tool results (e.g. if data \
   was synthetic, or the tool flagged implausible metrics) - do not bury or \
   soften it.
-- Notes that Phase 1 still has no automated overfitting/lookahead review yet \
-  (that's Phase 2), so the result should be treated as preliminary.
+- Tool results include a `review` field with a deterministic verdict \
+  (STRONG/PROMISING/WEAK/REJECTED) and findings. State the verdict explicitly, \
+  and list every CRITICAL and WARNING finding verbatim. Never omit them, and \
+  never soften a REJECTED or WEAK verdict into something more positive.
 
 Reply in the same language the user used in their request."""
