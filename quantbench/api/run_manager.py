@@ -16,11 +16,12 @@ restart - a client reconnecting after a restart just falls back to polling
 from __future__ import annotations
 
 import queue
+import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from quantbench.agent.coordinator import Coordinator
+from quantbench.agent.coordinator import Coordinator, RunCancelled
 from quantbench.artifact.store import ArtifactStore
 from quantbench.config import RUNS_DIR
 
@@ -34,27 +35,39 @@ class RunManager:
         self._store = run_store or ArtifactStore(RUNS_DIR)
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._queues: dict[str, queue.Queue] = {}
+        self._cancel_events: dict[str, threading.Event] = {}
+
+    def _run_task(self, run, event_queue: queue.Queue, work: Any) -> None:
+        cancel_event = self._cancel_events[run.run_id]
+        try:
+            work(cancel_event)
+        except RunCancelled:
+            run.save_json("cancelled.json", {"run_id": run.run_id})
+            event_queue.put({"type": "cancelled"})
+            event_queue.put(_STREAM_END)
+        except Exception:
+            run.save_json("error.json", {"traceback": traceback.format_exc()})
+            event_queue.put({"type": "error", "message": traceback.format_exc()})
+            event_queue.put(_STREAM_END)
+        finally:
+            self._cancel_events.pop(run.run_id, None)
 
     def submit(self, user_request: str) -> str:
         run = self._store.create_run(user_request)
         coordinator = Coordinator()
         event_queue: queue.Queue = queue.Queue()
         self._queues[run.run_id] = event_queue
+        self._cancel_events[run.run_id] = threading.Event()
 
         def on_event(event: dict[str, Any]) -> None:
             event_queue.put(event)
             if event.get("type") == "final":
                 event_queue.put(_STREAM_END)
 
-        def _task() -> None:
-            try:
-                coordinator.execute(run, user_request, on_event=on_event)
-            except Exception:
-                run.save_json("error.json", {"traceback": traceback.format_exc()})
-                event_queue.put({"type": "error", "message": traceback.format_exc()})
-                event_queue.put(_STREAM_END)
+        def work(cancel_event: threading.Event) -> None:
+            coordinator.execute(run, user_request, on_event=on_event, cancel_event=cancel_event)
 
-        self._executor.submit(_task)
+        self._executor.submit(self._run_task, run, event_queue, work)
         return run.run_id
 
     def fork(self, parent_run_id: str, modification: str) -> str:
@@ -62,22 +75,35 @@ class RunManager:
         coordinator = Coordinator()
         event_queue: queue.Queue = queue.Queue()
         self._queues[run.run_id] = event_queue
+        self._cancel_events[run.run_id] = threading.Event()
 
         def on_event(event: dict[str, Any]) -> None:
             event_queue.put(event)
             if event.get("type") == "final":
                 event_queue.put(_STREAM_END)
 
-        def _task() -> None:
-            try:
-                coordinator.execute_fork(run, parent_run_id, modification, on_event=on_event)
-            except Exception:
-                run.save_json("error.json", {"traceback": traceback.format_exc()})
-                event_queue.put({"type": "error", "message": traceback.format_exc()})
-                event_queue.put(_STREAM_END)
+        def work(cancel_event: threading.Event) -> None:
+            coordinator.execute_fork(run, parent_run_id, modification, on_event=on_event, cancel_event=cancel_event)
 
-        self._executor.submit(_task)
+        self._executor.submit(self._run_task, run, event_queue, work)
         return run.run_id
+
+    def cancel(self, run_id: str) -> bool:
+        """Signal a running run to stop before its next LLM call/tool call.
+        Returns False if the run isn't currently tracked as active (already
+        finished, or the API process restarted since it was submitted)."""
+        cancel_event = self._cancel_events.get(run_id)
+        if cancel_event is None:
+            return False
+        cancel_event.set()
+        return True
+
+    def cancel_all(self) -> None:
+        """Signal every in-flight run to stop. Called on API shutdown so a
+        Ctrl-C doesn't leave background threads spinning through MAX_STEPS
+        while the process tries to exit."""
+        for cancel_event in self._cancel_events.values():
+            cancel_event.set()
 
     def has_live_stream(self, run_id: str) -> bool:
         return run_id in self._queues

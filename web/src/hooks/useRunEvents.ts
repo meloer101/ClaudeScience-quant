@@ -6,7 +6,7 @@ import type { RunEvent } from "../types";
 /**
  * Streams live tool-call progress for a run via SSE while it's active.
  * Resets its event list whenever `runId` changes. On a terminal event
- * ("final"/"error") it invalidates the run-detail query so the completed
+ * ("final"/"error"/"cancelled") it invalidates the run-detail query so the completed
  * run's real data (metrics, artifacts, research note) takes over rendering.
  */
 export function useRunEvents(runId: string | null, isRunning: boolean) {
@@ -27,7 +27,7 @@ export function useRunEvents(runId: string | null, isRunning: boolean) {
     source.onmessage = (message) => {
       const event = JSON.parse(message.data) as RunEvent;
       setEvents((prev) => [...prev, event]);
-      if (event.type === "final" || event.type === "error") {
+      if (event.type === "final" || event.type === "error" || event.type === "cancelled") {
         source.close();
         void queryClient.invalidateQueries({ queryKey: ["run", runId] });
         void queryClient.invalidateQueries({ queryKey: ["runs"] });

@@ -2,15 +2,17 @@ import { useState } from "react";
 
 interface ChatInputProps {
   onSubmit: (request: string) => Promise<void>;
+  isRunning?: boolean;
+  onStop?: () => void;
 }
 
-export function ChatInput({ onSubmit }: ChatInputProps) {
+export function ChatInput({ onSubmit, isRunning = false, onStop }: ChatInputProps) {
   const [value, setValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     const trimmed = value.trim();
-    if (!trimmed || isSubmitting) return;
+    if (!trimmed || isSubmitting || isRunning) return;
     setIsSubmitting(true);
     try {
       await onSubmit(trimmed);
@@ -19,6 +21,8 @@ export function ChatInput({ onSubmit }: ChatInputProps) {
       setIsSubmitting(false);
     }
   };
+
+  const busy = isSubmitting || isRunning;
 
   return (
     <div className="p-3">
@@ -37,12 +41,12 @@ export function ChatInput({ onSubmit }: ChatInputProps) {
           className="flex-1 resize-none outline-none text-sm py-1 max-h-40 text-warm-900 placeholder:text-warm-400"
         />
         <button
-          onClick={() => void handleSubmit()}
-          disabled={isSubmitting || !value.trim()}
+          onClick={() => (isRunning ? onStop?.() : void handleSubmit())}
+          disabled={isSubmitting || (!isRunning && !value.trim())}
           className="shrink-0 w-8 h-8 rounded-full bg-warm-900 text-white disabled:bg-warm-200 flex items-center justify-center transition-colors"
-          aria-label="Send"
+          aria-label={isRunning ? "Stop" : "Send"}
         >
-          {isSubmitting ? "…" : "↑"}
+          {isRunning ? <span className="w-2.5 h-2.5 bg-white rounded-[2px]" /> : busy ? "…" : "↑"}
         </button>
       </div>
     </div>

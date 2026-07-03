@@ -55,6 +55,9 @@ export function ChatMessage({ run, liveEvents, selectedFilename, onSelectArtifac
 
       <div className="max-w-3xl">
         {run.status === "running" && <LiveProgress events={liveEvents} />}
+        {run.status === "cancelled" && (
+          <div className="border border-warm-200 bg-warm-50 rounded-xl p-3 text-sm text-warm-600">已停止</div>
+        )}
         {run.status === "failed" && (
           <div className="border border-danger-200 bg-danger-50 rounded-xl p-3 text-sm text-danger-900">
             <div className="font-medium mb-1">运行失败</div>

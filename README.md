@@ -112,8 +112,13 @@ uv run python -m quantbench --skill reviewer-weak-triage "我上一个因子被�
 启动 API：
 
 ```bash
-uv run uvicorn quantbench.api.server:app --reload
+uv run uvicorn quantbench.api.server:app --reload --reload-dir quantbench
 ```
+
+`--reload-dir quantbench` keeps dev reload scoped to source files. Without it,
+Uvicorn watches the whole project tree; generated run artifacts such as
+`runs/<run_id>/signal.py` can trigger a backend reload mid-run and cancel the
+in-flight task.
 
 启动 Web 工作台：
 

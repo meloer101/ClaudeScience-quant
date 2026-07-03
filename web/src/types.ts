@@ -1,4 +1,4 @@
-export type RunStatus = "running" | "completed" | "failed";
+export type RunStatus = "running" | "completed" | "failed" | "cancelled";
 
 export type ArtifactKind =
   | "image"
@@ -131,4 +131,5 @@ export type RunEvent =
   | { type: "tool_start"; tool: string; args: Record<string, unknown> }
   | { type: "tool_end"; tool: string; result: unknown }
   | { type: "final"; summary: string }
+  | { type: "cancelled" }
   | { type: "error"; message: string };

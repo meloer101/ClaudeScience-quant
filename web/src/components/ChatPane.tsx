@@ -15,6 +15,8 @@ interface ChatPaneProps {
   onOpenCharts?: () => void;
   isChartsSelected?: boolean;
   onSubmit: (request: string) => Promise<void>;
+  isRunning?: boolean;
+  onStop?: () => void;
   compareRunIds: string[];
   onClearCompare: () => void;
   onForked: (runId: string) => void;
@@ -30,6 +32,8 @@ export function ChatPane({
   onOpenCharts,
   isChartsSelected,
   onSubmit,
+  isRunning,
+  onStop,
   compareRunIds,
   onClearCompare,
   onForked,
@@ -62,7 +66,7 @@ export function ChatPane({
           </>
         )}
       </div>
-      <ChatInput onSubmit={onSubmit} />
+      <ChatInput onSubmit={onSubmit} isRunning={isRunning} onStop={onStop} />
     </div>
   );
 }

@@ -65,6 +65,10 @@ export function getLineage(runId: string): Promise<LineageResult> {
   return request<LineageResult>(`/runs/${encodeURIComponent(runId)}/lineage`);
 }
 
+export function cancelRun(runId: string): Promise<{ status: string }> {
+  return request(`/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+}
+
 export function forkRun(runId: string, modification: string): Promise<{ run_id: string; status: string }> {
   return request(`/runs/${encodeURIComponent(runId)}/fork`, {
     method: "POST",

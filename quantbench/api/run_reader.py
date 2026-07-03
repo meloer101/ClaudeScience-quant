@@ -46,7 +46,7 @@ ARTIFACT_KIND_BY_EXT = {
 }
 
 # Internal bookkeeping files, not shown as user-facing generated artifacts.
-_HIDDEN_FILES = {"manifest.json", "config.yaml", "conversation.json", "error.json", "request.txt"}
+_HIDDEN_FILES = {"manifest.json", "config.yaml", "conversation.json", "error.json", "cancelled.json", "request.txt"}
 
 
 def list_run_ids() -> list[str]:
@@ -68,6 +68,8 @@ def get_status(run_id: str) -> str:
         raise FileNotFoundError(run_id)
     if (run_dir / "manifest.json").exists():
         return "completed"
+    if (run_dir / "cancelled.json").exists():
+        return "cancelled"
     if (run_dir / "error.json").exists():
         return "failed"
     return "running"

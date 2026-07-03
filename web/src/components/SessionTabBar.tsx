@@ -1,7 +1,7 @@
 export interface SessionTab {
   id: string; // real run_id, or "draft" for a new unsubmitted session
   label: string;
-  status: "running" | "completed" | "failed" | "draft";
+  status: "running" | "completed" | "failed" | "cancelled" | "draft";
 }
 
 interface SessionTabBarProps {

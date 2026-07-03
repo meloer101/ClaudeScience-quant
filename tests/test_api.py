@@ -461,3 +461,96 @@ def test_fork_endpoint_delegates_to_run_manager(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"run_id": "run_20260701_000002_fork", "status": "running"}
+
+
+def test_cancel_endpoint_404_for_unknown_run(tmp_path, client):
+    response = client.post("/api/runs/some_unknown_run/cancel")
+    assert response.status_code == 404
+
+
+def test_cancel_endpoint_is_a_noop_for_a_completed_run(tmp_path, client):
+    _write_fake_completed_run(tmp_path)
+
+    response = client.post("/api/runs/run_20260701_000000_aaaa/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "completed"}
+
+
+def test_cancel_endpoint_marks_orphaned_running_run_cancelled_after_restart(tmp_path, monkeypatch):
+    """A run directory with no terminal marker is only "running" by filesystem
+    inference. After an API restart there is no in-memory task to signal, so
+    the cancel endpoint must write a terminal marker itself."""
+
+    run_id = "run_20260701_000000_orphan"
+    run_dir = tmp_path / run_id
+    run_dir.mkdir()
+    (run_dir / "request.txt").write_text("之前没跑完的任务", encoding="utf-8")
+    monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
+
+    from quantbench.api import server as server_mod
+
+    class FakeManager:
+        def cancel(self, requested_run_id):
+            assert requested_run_id == run_id
+            return False
+
+    monkeypatch.setattr(server_mod, "_manager", FakeManager())
+    test_client = TestClient(server_mod.app)
+
+    response = test_client.post(f"/api/runs/{run_id}/cancel")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "cancelled"}
+    assert test_client.get(f"/api/runs/{run_id}/status").json() == {"status": "cancelled"}
+
+
+def test_cancel_endpoint_stops_a_run_before_it_reaches_the_step_limit(tmp_path, monkeypatch):
+    from _fakes import FakeLLMClient
+
+    class SlowFakeLLMClient(FakeLLMClient):
+        """Adds a small delay per call so the test has a window to cancel
+        mid-run instead of racing a run that would otherwise finish (or hit
+        MAX_STEPS) before the cancel request lands."""
+
+        def chat(self, messages, tools=None):
+            time.sleep(0.05)
+            return super().chat(messages, tools)
+
+    fetch_args = {"symbol": "BTC/USDT", "timeframe": "4h", "start": "2023-01-01", "end": "2023-02-01"}
+    fake = SlowFakeLLMClient([("tools", [("fetch_ohlcv", fetch_args)])] * 20)
+
+    monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
+    monkeypatch.setattr("quantbench.data.cache.DATA_CACHE_DIR", tmp_path / "data_cache")
+    monkeypatch.setattr("quantbench.agent.coordinator.LLMClient", lambda model: fake)
+
+    import quantbench.api.run_manager as run_manager_mod
+    from quantbench.artifact.store import ArtifactStore
+
+    monkeypatch.setattr(run_manager_mod, "RUNS_DIR", tmp_path)
+    from quantbench.api import server as server_mod
+
+    server_mod._manager = run_manager_mod.RunManager(run_store=ArtifactStore(tmp_path))
+    test_client = TestClient(server_mod.app)
+
+    run_id = test_client.post("/api/runs", json={"request": "测试一个简单信号"}).json()["run_id"]
+
+    # Let one or two steps run, then stop it - this is the "stop" button's
+    # request, and the whole point is that it must not require waiting for
+    # all 20 scripted steps (or MAX_STEPS) to play out.
+    time.sleep(0.12)
+    cancel_response = test_client.post(f"/api/runs/{run_id}/cancel")
+    assert cancel_response.status_code == 200
+
+    deadline = time.time() + 10
+    status = "running"
+    while time.time() < deadline:
+        status = test_client.get(f"/api/runs/{run_id}/status").json()["status"]
+        if status != "running":
+            break
+        time.sleep(0.05)
+
+    assert status == "cancelled"
+    # The whole point of cancelling is to not burn through the rest of the
+    # scripted (or MAX_STEPS) turns once the signal is set.
+    assert len(fake.calls) < 20

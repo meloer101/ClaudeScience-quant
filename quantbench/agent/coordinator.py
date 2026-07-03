@@ -1,5 +1,6 @@
 import difflib
 import json
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +43,17 @@ class RunResult:
     metrics: dict[str, float]
     warnings: list[str]
     summary: str
+
+
+class RunCancelled(Exception):
+    """Raised inside execute()/execute_fork() when the caller's cancel_event
+    fires. Callers (RunManager) catch this to mark the run "cancelled" instead
+    of "failed" and to stop the tool-use loop before its next expensive LLM
+    call, rather than letting a stuck run spin for up to MAX_STEPS."""
+
+    def __init__(self, run_id: str):
+        super().__init__(f"run {run_id} was cancelled")
+        self.run_id = run_id
 
 
 FETCH_OHLCV_PARAMS = {
@@ -525,6 +537,7 @@ class Coordinator:
         skill_names: list[str] | None = None,
         derived_from_factor: str | None = None,
         prompt_override: str | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> RunResult:
         """Drive the tool-use loop for an already-created Run.
 
@@ -571,6 +584,10 @@ class Coordinator:
         emit({"type": "start"})
         summary = ""
         for _ in range(MAX_STEPS):
+            if cancel_event is not None and cancel_event.is_set():
+                emit({"type": "cancelled"})
+                raise RunCancelled(run.run_id)
+
             response = self.llm.chat(messages, tools=registry.schemas())
             message = response.choices[0].message
             messages.append(_message_to_dict(message))
@@ -582,6 +599,10 @@ class Coordinator:
                 break
 
             for call in tool_calls:
+                if cancel_event is not None and cancel_event.is_set():
+                    emit({"type": "cancelled"})
+                    raise RunCancelled(run.run_id)
+
                 name = call.function.name
                 try:
                     args = json.loads(call.function.arguments or "{}")
@@ -741,6 +762,7 @@ class Coordinator:
         parent_run_id: str,
         modification_request: str,
         on_event: Callable[[dict[str, Any]], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> RunResult:
         seed_config = build_fork_config(parent_run_id, modification_request)
 
@@ -788,6 +810,10 @@ class Coordinator:
         emit({"type": "start", "parent_run_id": parent_run_id})
         summary = ""
         for _ in range(MAX_STEPS):
+            if cancel_event is not None and cancel_event.is_set():
+                emit({"type": "cancelled"})
+                raise RunCancelled(run.run_id)
+
             response = self.llm.chat(messages, tools=registry.schemas())
             message = response.choices[0].message
             messages.append(_message_to_dict(message))
@@ -799,6 +825,10 @@ class Coordinator:
                 break
 
             for call in tool_calls:
+                if cancel_event is not None and cancel_event.is_set():
+                    emit({"type": "cancelled"})
+                    raise RunCancelled(run.run_id)
+
                 name = call.function.name
                 try:
                     args = json.loads(call.function.arguments or "{}")

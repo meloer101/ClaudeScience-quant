@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { listRuns, createRun, getRun, listLibrary } from "./api/client";
+import { listRuns, createRun, getRun, listLibrary, cancelRun } from "./api/client";
 import { useRunEvents } from "./hooks/useRunEvents";
 import { Sidebar } from "./components/Sidebar";
 import { SessionTabBar, type SessionTab } from "./components/SessionTabBar";
@@ -192,6 +192,14 @@ function App() {
     await queryClient.invalidateQueries({ queryKey: ["library"] });
   };
 
+  const handleStop = async () => {
+    if (!activeRunId) return;
+    await cancelRun(activeRunId);
+    await queryClient.invalidateQueries({ queryKey: ["run", activeRunId] });
+    await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    await queryClient.invalidateQueries({ queryKey: ["library"] });
+  };
+
   const handleForked = async (runId: string) => {
     openRunTab(runId);
     await queryClient.invalidateQueries({ queryKey: ["runs"] });
@@ -232,6 +240,8 @@ function App() {
             onOpenCharts={handleOpenCharts}
             isChartsSelected={activeArtifactKey === (activeRunId ? artifactKey(activeRunId, CHARTS_FILENAME) : null)}
             onSubmit={handleSubmit}
+            isRunning={currentRun?.status === "running"}
+            onStop={() => void handleStop()}
             compareRunIds={compareRunIds}
             onClearCompare={() => setCompareRunIds([])}
             onForked={handleForked}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,24 @@ from quantbench.library.compare import compare_runs, compute_returns_correlation
 from quantbench.library.index import ExperimentIndex, parse_csv_set
 from quantbench.library.lineage import lineage
 
-app = FastAPI(title="QuantBench API")
+_manager = RunManager()
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    yield
+    # Without this, Ctrl-C/reload leaves ThreadPoolExecutor worker threads
+    # mid-LLM-call; the process can't exit until they finish (up to
+    # MAX_STEPS), and the run stays stuck in "running" status forever since
+    # neither manifest.json nor error.json ever gets written. Read _manager
+    # via the module (not the closed-over variable) so tests that swap it
+    # out on server_mod._manager still get the right instance cancelled.
+    import quantbench.api.server as _self
+
+    _self._manager.cancel_all()
+
+
+app = FastAPI(title="QuantBench API", lifespan=_lifespan)
 
 # Local single-user tool; the frontend dev server runs on a different port.
 app.add_middleware(
@@ -32,8 +50,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-_manager = RunManager()
 
 
 @app.get("/api/library", response_model=list[ExperimentRecordSchema])
@@ -198,6 +214,34 @@ def create_run(payload: NewRunRequest) -> NewRunResponse:
         raise HTTPException(status_code=400, detail="request must not be empty")
     run_id = _manager.submit(payload.request)
     return NewRunResponse(run_id=run_id, status="running")
+
+
+def _mark_orphaned_run_cancelled(run_id: str) -> None:
+    payload = {"run_id": run_id, "reason": "cancelled after API restart"}
+    (run_reader.run_dir_for(run_id) / "cancelled.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+@app.post("/api/runs/{run_id}/cancel", response_model=StatusResponse)
+def cancel_run(run_id: str) -> StatusResponse:
+    try:
+        status = run_reader.get_status(run_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="run not found") from None
+    if status != "running":
+        return StatusResponse(status=status)
+    if _manager.cancel(run_id):
+        return StatusResponse(status="running")
+
+    # The process restarted or the in-memory worker is gone. Filesystem status
+    # alone would otherwise keep this historical run stuck as "running".
+    status = run_reader.get_status(run_id)
+    if status == "running":
+        _mark_orphaned_run_cancelled(run_id)
+        return StatusResponse(status="cancelled")
+    return StatusResponse(status=status)
 
 
 @app.post("/api/runs/{run_id}/fork", response_model=NewRunResponse)
