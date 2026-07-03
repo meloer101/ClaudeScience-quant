@@ -79,6 +79,7 @@ class Run:
         parent_run_id: str | None = None,
         injected_skills: list[str] | None = None,
         data_slices: list[dict[str, Any]] | None = None,
+        delegations: list[dict[str, Any]] | None = None,
     ) -> Path:
         manifest = {
             "run_id": self.run_id,
@@ -99,6 +100,7 @@ class Run:
             "warnings": warnings or [],
             "conversation_log": conversation_log,
             "steps": self.steps,
+            "delegations": delegations or [],
         }
         return self.save_json("manifest.json", manifest)
 

@@ -1,13 +1,35 @@
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from quantbench.agent.subagent import SubAgent, run_subagent
 from quantbench.review.report import ReviewReport
+from quantbench.skills.registry import SkillRegistry
 
 _VALID_VERDICTS = frozenset({"STRONG", "PROMISING", "WEAK", "REJECTED"})
+
+_CRITIC_SYSTEM_PROMPT = (
+    "You are an independent QuantBench Critic Agent. You did not write the signal code and "
+    "must not defend it. Use only the supplied deterministic evidence. Check whether the "
+    "Coordinator summary is numerically and narratively consistent with metrics and reviewer "
+    "findings, then give your independent verdict. Return only JSON with keys: verdict, "
+    "agrees_with_deterministic_verdict, critique, narrative_consistency_issues, "
+    "recommended_next_steps. The `verdict` field MUST be exactly one of these four strings: "
+    "STRONG, PROMISING, WEAK, REJECTED - no other values are valid."
+)
+
+_CRITIC_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string"},
+        "agrees_with_deterministic_verdict": {"type": "boolean"},
+        "critique": {"type": "string"},
+        "narrative_consistency_issues": {"type": "array", "items": {"type": "string"}},
+        "recommended_next_steps": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["verdict", "agrees_with_deterministic_verdict", "critique"],
+}
 
 
 @dataclass(frozen=True)
@@ -58,26 +80,14 @@ def run_critic(
             "coordinator_summary": summary,
             "context": context,
         }
-        response = llm.chat(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an independent QuantBench Critic Agent. You did not write the signal code and "
-                        "must not defend it. Use only the supplied deterministic evidence. Check whether the "
-                        "Coordinator summary is numerically and narratively consistent with metrics and reviewer "
-                        "findings, then give your independent verdict. Return only JSON with keys: verdict, "
-                        "agrees_with_deterministic_verdict, critique, narrative_consistency_issues, "
-                        "recommended_next_steps. The `verdict` field MUST be exactly one of these four strings: "
-                        "STRONG, PROMISING, WEAK, REJECTED - no other values are valid."
-                    ),
-                },
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, default=str)},
-            ],
-            tools=[],
+        agent = SubAgent(
+            name="critic",
+            system_prompt=_CRITIC_SYSTEM_PROMPT,
+            registry=SkillRegistry(),
+            max_turns=1,
+            output_schema=_CRITIC_OUTPUT_SCHEMA,
         )
-        content = response.choices[0].message.content or ""
-        payload = _parse_json(content)
+        payload = run_subagent(llm, agent, user_payload)
         verdict = _optional_str(payload.get("verdict"))
         issues = _string_list(payload.get("narrative_consistency_issues"))
         if verdict is not None:
@@ -102,17 +112,6 @@ def run_critic(
             narrative_consistency_issues=[],
             recommended_next_steps=[],
         )
-
-
-def _parse_json(content: str) -> dict[str, Any]:
-    text = content.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL)
-    if fenced:
-        text = fenced.group(1)
-    payload = json.loads(text)
-    if not isinstance(payload, dict):
-        raise ValueError("critic response must be a JSON object")
-    return payload
 
 
 def _optional_str(value: Any) -> str | None:
