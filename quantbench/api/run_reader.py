@@ -206,6 +206,15 @@ def read_portfolio_summary(run_id: str) -> dict[str, Any] | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_monitoring_report(run_id: str) -> list[dict[str, Any]] | None:
+    """Full check history written by quantbench.monitor.pipeline.check_run_decay,
+    most recent check last. None if the run has never been monitored."""
+    path = run_dir_for(run_id) / "monitoring_report.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 PARQUET_PREVIEW_ROW_LIMIT = 200
 
 

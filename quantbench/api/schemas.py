@@ -14,6 +14,7 @@ class RunSummary(BaseModel):
     status: str
     warnings_count: int
     sharpe: float | None = None
+    monitoring_status: str | None = None
 
 
 class RunDetail(BaseModel):

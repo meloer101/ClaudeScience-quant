@@ -38,6 +38,7 @@ from quantbench.factors.store import FactorStore
 from quantbench.library.aggregate import summarize as summarize_library
 from quantbench.library.fork import build_fork_config
 from quantbench.library.index import ExperimentIndex
+from quantbench.monitor.pipeline import check_run_decay
 from quantbench.portfolio.optimize import PORTFOLIO_METHODS
 from quantbench.portfolio.pipeline import run_portfolio_pipeline
 from quantbench.skilldocs.inject import build_augmented_system_prompt
@@ -261,6 +262,23 @@ OPTIMIZE_PORTFOLIO_PARAMS = {
         "max_weight": {"type": "number", "description": "Upper bound on any single factor's weight. Default 0.6."},
     },
     "required": ["run_ids"],
+}
+
+
+CHECK_RUN_DECAY_PARAMS = {
+    "type": "object",
+    "properties": {
+        "run_id": {
+            "type": "string",
+            "description": (
+                "run_id of an existing STRONG/PROMISING run (single-symbol, cross-sectional, or portfolio) to "
+                "check for live decay: freshly re-fetches recent market data, re-runs the run's own factor code "
+                "on it, and compares the resulting Sharpe to the run's original backtest Sharpe. Deterministic - "
+                "does not create a new run or call the Critic; only reports facts about the existing run."
+            ),
+        },
+    },
+    "required": ["run_id"],
 }
 
 
@@ -559,6 +577,9 @@ def _build_registry(ctx: _RunContext, run, run_store: ArtifactStore, critic_llm,
             run_store, critic_llm, model, run.run_id, run_ids, method, cost_bps, split, max_weight
         )
 
+    def _check_run_decay(run_id: str) -> dict:
+        return check_run_decay(run_id)
+
     registry.register(
         Skill("fetch_ohlcv", "Fetch and cache OHLCV market data.", FETCH_OHLCV_PARAMS, _fetch_ohlcv)
     )
@@ -595,6 +616,15 @@ def _build_registry(ctx: _RunContext, run, run_store: ArtifactStore, critic_llm,
             "Combine multiple existing runs' own factors into one multi-factor portfolio with fitted weights.",
             OPTIMIZE_PORTFOLIO_PARAMS,
             _optimize_portfolio,
+        )
+    )
+    registry.register(
+        Skill(
+            "check_run_decay",
+            "Check whether an existing STRONG/PROMISING run's performance has decayed since it was created, "
+            "using freshly fetched market data.",
+            CHECK_RUN_DECAY_PARAMS,
+            _check_run_decay,
         )
     )
     return registry
@@ -1282,6 +1312,12 @@ class Coordinator:
             "data_path": reproduce_data_path,
             "cache": ctx.cache_meta,
             "universe": ctx.universe.to_dict() if ctx.universe else None,
+            # Only set for single-symbol runs (ctx.fetch_params is populated by
+            # _fetch_ohlcv). Nothing else in config.yaml/backtest_result.json
+            # records which symbol/timeframe a single-symbol run actually used -
+            # quantbench/monitor/pipeline.py needs this to know what to
+            # re-fetch when checking a run for decay later.
+            "fetch_params": ctx.fetch_params,
             "parent_run_id": parent_run_id,
             "derived_from_factor": derived_from_factor,
             "injected_skills": ctx.injected_skills,

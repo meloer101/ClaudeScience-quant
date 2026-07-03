@@ -431,10 +431,12 @@ class UniverseDefinition:
 **当前状态（详细计划见 [PHASE5.md](PHASE5.md)、[PHASE8.md](PHASE8.md)、[PHASE9.md](PHASE9.md)）：** Phase 5 先只补齐 crypto 截面研究，而不是一次性吞下期货、多 agent、组合优化等所有高级能力，现已逐步补齐前两项。系统现在可以构建当前按 24h 成交量排名的 Top-N USDT 永续合约 universe，明确标注这不是 point-in-time universe；截面 Reviewer 的 beta exposure 会按资产类别路由，crypto 使用 BTC/USDT，equity 仍使用 SPY；crypto 永续合约 run 会自动写入 funding rate carry cost 未建模的警告。期货支持没有打勾，后续需要先单独设计 continuous contract 和 roll 规则。多 agent 协作已按 PHASE8.md 落地：每次 run 结束时新增一个独立 LLM Critic 调用，只看确定性证据（Reviewer 结果+回测指标+ Coordinator 最终陈述），核对叙述一致性并给出独立 verdict；`screen_factors` 工具让一次请求并发筛选多个候选因子，每个候选各自触发 Critic。组合优化已按 PHASE9.md 落地：`optimize_portfolio` 工具把一批已有 run 的收益序列组合成一个多因子组合，默认方法是风险平价（不估计期望收益，只用协方差），六种方法（含 max_sharpe 警示性对照）的样本内/样本外 Sharpe 对照表强制随结果一起返回；组合本身建一个新 run，跑组合专属确定性 Reviewer（样本外衰减、权重扰动稳定性、是否真的比最好的单因子更好、成分相关性健康度）和独立 Critic，自动继承实验库/lineage/compare 全部溯源能力。
 
 ### Phase 6: 生产化 (Week 15+)
-- [ ] Live signal monitoring
-- [ ] 策略衰减预警
-- [ ] 团队协作
-- [ ] 权限管理
+- [x] Live signal monitoring（详细计划见 [PHASE10.md](PHASE10.md)）
+- [x] 策略衰减预警（同上）
+- [ ] 团队协作（明确不做，见第八节产品边界：先做单用户本地工具）
+- [ ] 权限管理（同上，依赖团队协作，暂不做）
+
+**当前状态：** 单用户场景下的 live monitoring 已落地。`check_run_decay` 对已判定 STRONG/PROMISING 的 run 增量刷新最新市场数据、重新执行该 run 自己的因子代码，把数据截止点之后的 Sharpe 与原始回测 Sharpe 对比，复用 Phase 2 Reviewer 的样本外衰减阈值哲学（<0.5 alert、<0.8 watch）。纯确定性检查，不建新子 run、不跑 Critic——衰减检查是重复性健康检查，不是新研究结论。CLI（`monitor check`/`monitor watch`）、API（`/api/runs/{id}/monitoring`）、Coordinator 对话工具三路可用，调度用无额外依赖的 stdlib 轮询循环。
 
 ---
 

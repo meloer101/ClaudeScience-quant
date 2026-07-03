@@ -106,6 +106,7 @@ def list_runs() -> list[RunSummary]:
                 status=run_reader.get_status(run_id),
                 warnings_count=len(manifest.get("warnings", [])),
                 sharpe=(manifest.get("metrics") or {}).get("sharpe"),
+                monitoring_status=(manifest.get("live_monitoring") or {}).get("status"),
             )
         )
     return summaries
@@ -174,6 +175,30 @@ def get_portfolio_summary(run_id: str):
     if summary is None:
         raise HTTPException(status_code=404, detail="portfolio summary not found")
     return summary
+
+
+@app.get("/api/runs/{run_id}/monitoring")
+def get_monitoring_report(run_id: str):
+    """Full decay-check history for a run (see quantbench/monitor/). 404s if
+    the run has never been checked, same convention as /portfolio."""
+    history = run_reader.read_monitoring_report(run_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail="no monitoring history for this run")
+    return {"run_id": run_id, "history": history}
+
+
+@app.post("/api/runs/{run_id}/monitoring/check")
+def trigger_monitoring_check(run_id: str):
+    """Runs a decay check synchronously and returns its result - lets the
+    frontend offer a "check now" button without needing `quantbench monitor
+    watch` running in the background."""
+    from quantbench.monitor.pipeline import check_run_decay
+
+    try:
+        run_reader.get_status(run_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="run not found") from None
+    return check_run_decay(run_id)
 
 
 @app.get("/api/runs/{run_id}/backtest-result")

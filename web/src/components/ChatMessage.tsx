@@ -3,6 +3,7 @@ import type { RunDetail, RunEvent } from "../types";
 import { WarningBanner } from "./WarningBanner";
 import { ArtifactGallery } from "./ArtifactGallery";
 import { LiveProgress } from "./LiveProgress";
+import { MonitoringPanel } from "./MonitoringPanel";
 import { PortfolioSummaryPanel } from "./PortfolioSummaryPanel";
 
 interface ChatMessageProps {
@@ -71,6 +72,7 @@ export function ChatMessage({ run, liveEvents, selectedFilename, onSelectArtifac
             <WarningBanner warnings={run.warnings} />
             <MetricsTable metrics={run.metrics} />
             {isPortfolioRun && <PortfolioSummaryPanel runId={run.run_id} />}
+            {hasBacktestResult && <MonitoringPanel runId={run.run_id} />}
             <div className="prose prose-sm max-w-none">
               <Markdown>{run.summary}</Markdown>
             </div>

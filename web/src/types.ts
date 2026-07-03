@@ -19,6 +19,8 @@ export interface ArtifactInfo {
   size_bytes: number;
 }
 
+export type MonitoringStatus = "ok" | "watch" | "alert" | "insufficient_data";
+
 export interface RunSummary {
   run_id: string;
   user_request: string;
@@ -26,6 +28,7 @@ export interface RunSummary {
   status: RunStatus;
   warnings_count: number;
   sharpe: number | null;
+  monitoring_status: MonitoringStatus | null;
 }
 
 export interface RunDetail {
@@ -131,6 +134,26 @@ export interface PortfolioSummary {
   train_test_split_index: string;
   cost_bps: number;
   max_weight: number;
+}
+
+// Mirrors DecayReport.to_dict() (quantbench/monitor/decay.py). One entry per
+// check_run_decay call, oldest first - GET /api/runs/{id}/monitoring returns
+// the full history under "history".
+export interface DecayReportEntry {
+  status: MonitoringStatus;
+  checked_at: string;
+  since_timestamp: string;
+  original_sharpe: number;
+  recent_sharpe: number | null;
+  sharpe_decay_ratio: number | null;
+  recent_observations: number;
+  recent_max_drawdown: number | null;
+  detail: string;
+}
+
+export interface MonitoringReport {
+  run_id: string;
+  history: DecayReportEntry[];
 }
 
 export interface ParquetPreview {

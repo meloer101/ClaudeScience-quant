@@ -1,8 +1,10 @@
 import type {
   BacktestResultPayload,
   CompareTable,
+  DecayReportEntry,
   ExperimentRecord,
   LineageResult,
+  MonitoringReport,
   ParquetPreview,
   PortfolioSummary,
   ReviewReportPayload,
@@ -116,4 +118,15 @@ export async function getPortfolioSummary(runId: string): Promise<PortfolioSumma
 
 export function previewParquet(runId: string, filename: string): Promise<ParquetPreview> {
   return request<ParquetPreview>(`/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(filename)}/preview`);
+}
+
+export async function getMonitoringReport(runId: string): Promise<MonitoringReport | null> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/monitoring`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json() as Promise<MonitoringReport>;
+}
+
+export function triggerMonitoringCheck(runId: string): Promise<DecayReportEntry | { error: string } | { skipped: string; verdict: string | null }> {
+  return request(`/runs/${encodeURIComponent(runId)}/monitoring/check`, { method: "POST" });
 }

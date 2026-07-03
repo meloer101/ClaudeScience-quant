@@ -34,6 +34,9 @@ def main(args: tuple[str, ...]) -> None:
     if args[0] == "portfolio":
         _portfolio(args[1:])
         return
+    if args[0] == "monitor":
+        _monitor(args[1:])
+        return
     _run_request(" ".join(args), forced_skills)
 
 
@@ -115,6 +118,78 @@ def _portfolio(args: tuple[str, ...]) -> None:
         max_weight=float(max_weight_value) if max_weight_value is not None else None,
     )
     _echo_run_result(result)
+
+
+def _monitor(args: tuple[str, ...]) -> None:
+    if not args:
+        raise click.UsageError("monitor requires a subcommand: check/watch")
+    command = args[0]
+    rest = args[1:]
+    if command == "check":
+        _monitor_check(rest)
+        return
+    if command == "watch":
+        _monitor_watch(rest)
+        return
+    raise click.UsageError(f"unknown monitor subcommand: {command}")
+
+
+def _monitor_check(args: tuple[str, ...]) -> None:
+    from quantbench.monitor.pipeline import check_run_decay, run_monitor_pass
+
+    json_output = "--json-output" in args
+    if "--all-alive" in args:
+        results = run_monitor_pass()
+    else:
+        run_ids = [arg for arg in args if not arg.startswith("--")]
+        if not run_ids:
+            raise click.UsageError("monitor check requires at least one run_id, or --all-alive")
+        results = [{"run_id": run_id, **check_run_decay(run_id)} for run_id in run_ids]
+
+    if json_output:
+        click.echo(json.dumps(results, ensure_ascii=False, indent=2))
+        return
+    _echo_monitor_table(results)
+
+
+def _monitor_watch(args: tuple[str, ...]) -> None:
+    import time
+
+    from quantbench.config import MONITOR_POLL_INTERVAL_SECONDS
+    from quantbench.monitor.pipeline import run_monitor_pass
+
+    interval_value = _option_value(args, "--interval")
+    interval = float(interval_value) if interval_value is not None else MONITOR_POLL_INTERVAL_SECONDS
+    click.echo(f"Watching for decay every {interval:.0f}s. Ctrl+C to stop.")
+    try:
+        while True:
+            results = run_monitor_pass()
+            _echo_monitor_table(results)
+            click.echo(f"--- checked {len(results)} run(s), sleeping {interval:.0f}s ---")
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        click.echo("Stopped.")
+
+
+def _echo_monitor_table(results: list[dict]) -> None:
+    headers = ["run_id", "status", "verdict/error", "recent_sharpe", "decay_ratio", "detail"]
+    click.echo(" | ".join(headers))
+    click.echo(" | ".join("---" for _ in headers))
+    for item in results:
+        status = item.get("status") or ("skipped" if "skipped" in item else "error" if "error" in item else "")
+        note = item.get("verdict") or item.get("error") or item.get("skipped") or ""
+        click.echo(
+            " | ".join(
+                [
+                    str(item.get("run_id", "")),
+                    str(status),
+                    _clip(str(note), 40),
+                    _fmt(item.get("recent_sharpe")),
+                    _fmt(item.get("sharpe_decay_ratio")),
+                    _clip(str(item.get("detail", "")), 60),
+                ]
+            )
+        )
 
 
 def _factor(args: tuple[str, ...], forced_skills: list[str]) -> None:

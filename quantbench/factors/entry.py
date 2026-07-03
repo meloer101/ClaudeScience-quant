@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import ast
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from quantbench.api import run_reader
+from quantbench.factors.compute_extract import extract_compute_source
 from quantbench.factors.parametrize import extract_parameters
 from quantbench.library.record import build_record
 
@@ -64,7 +64,7 @@ def build_entry_from_run(run_id: str, name: str, *, force: bool = False, notes: 
         raise RejectedFactorError(f"run {run_id} has REJECTED verdict; pass --force to save it anyway")
 
     record = build_record(run_id)
-    code = _extract_compute_source(signal_path.read_text(encoding="utf-8"))
+    code = extract_compute_source(signal_path.read_text(encoding="utf-8"))
     return FactorEntry(
         name=name,
         family=record.factor_family,
@@ -91,13 +91,3 @@ def _read_json(path: Path) -> dict[str, Any] | None:
     import json
 
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _extract_compute_source(source: str) -> str:
-    tree = ast.parse(source)
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == "compute":
-            segment = ast.get_source_segment(source, node)
-            if segment:
-                return segment.rstrip() + "\n"
-    raise ValueError("signal.py must define def compute(...)")

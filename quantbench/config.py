@@ -27,6 +27,18 @@ PORTFOLIO_MIN_FACTORS = 2
 PORTFOLIO_MAX_FACTORS = 20
 PORTFOLIO_MIN_OVERLAP_OBS = 60
 
+# Phase 6a: live signal monitoring / decay alerts. Refresh windows overlap
+# rather than fetch strictly-since-last-bar, because providers occasionally
+# revise the most recent (possibly still-open) bar - upsert_ohlcv is
+# idempotent on (symbol, timestamp) so re-fetching the overlap is free.
+MONITOR_REFRESH_LOOKBACK_DAYS = 10
+MONITOR_MIN_OBSERVATIONS = 5
+# Same ratio thresholds as the out-of-sample review check (review/report.py)
+# so "decayed since creation" and "decayed train->test" mean the same thing.
+MONITOR_SHARPE_ALERT_RATIO = 0.5
+MONITOR_SHARPE_WATCH_RATIO = 0.8
+MONITOR_POLL_INTERVAL_SECONDS = 6 * 3600
+
 
 def _load_dotenv() -> None:
     env_path = PROJECT_ROOT / ".env"

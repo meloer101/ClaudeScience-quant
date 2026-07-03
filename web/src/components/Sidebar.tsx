@@ -1,3 +1,4 @@
+import { MonitoringStatusBadge } from "./MonitoringStatusBadge";
 import type { ExperimentRecord, RunSummary } from "../types";
 
 interface SidebarProps {
@@ -183,6 +184,7 @@ export function Sidebar({
               >
                 <StatusDot status={run.status} />
                 <span className="truncate flex-1">{run.user_request || run.run_id}</span>
+                <MonitoringStatusBadge status={run.monitoring_status} />
               </button>
             ))}
           </div>
