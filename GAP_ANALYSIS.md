@@ -177,9 +177,10 @@
 **Claude Science 的核心体验**是研究对话：追问、修改、中途转向、"把手续费改成 10bps 再看看"在同一上下文里连续发生。
 
 **缺什么**：
-- [ ] Session 概念：一个 session 包含多轮对话 + 多个 run，对话历史作为上下文传给后续轮次。
-- [ ] Web 端从"提交 run 表单"演进为"对话流 + 内嵌 run 卡片"。
-- [ ] Session 本身成为 artifact 的一部分（Claude Science：溯源包含对话历史）。
+- [x] Session 概念：一个 session 包含多轮对话 + 多个 run；后续轮次注入结构化 run 摘要而非原始 transcript。
+- [x] Web 端从"提交 run 表单"演进为"对话流 + 内嵌 run 卡片"。
+- [x] Session 本身成为 artifact 的一部分：`runs/_sessions/{session_id}.json` + run manifest `session_id` / `turn_index`。
+- [x] 记忆闭环：长期记忆写入 `memory/user/`，`INDEX.md` 注入常驻小集；默认偏好只预填执行前审查台并通过 `applied_memory_defaults` 留痕；跨 session consolidation 复用 SubAgent，写/改进入 `memory_events` 并通过 SSE 会话内可见。
 
 ### 4.2 执行前审查台（human-in-the-loop）（优先级：🟡 中）
 

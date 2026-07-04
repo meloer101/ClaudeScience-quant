@@ -6,6 +6,8 @@
 >
 > 关联:① Session = [PHASE13B.md](PHASE13B.md) §1.5;② 长期记忆 = 本文档新增;③ 持久记录 = 既有 `quantbench/library/`;注入闸门与 [PHASE13B_HITL_STAGING.md](PHASE13B_HITL_STAGING.md) 的审查台咬合。
 
+**落地状态(2026-07-04)**:三层已按文件式方案落地。① Session 写入 `runs/_sessions/` 并在 Web 中按线程展示 run 卡片;② 长期记忆写入 `memory/user/` 并通过 `INDEX.md` 注入常驻小集;② 默认值只进入 staging gate,manifest 记录 `applied_memory_defaults`;①→② consolidation 复用 `SubAgent`,跨 session 阈值晋升并记录 `memory_events`。
+
 ---
 
 ## 〇、核心模型:不是三个抽屉,是三层 + 四流动
@@ -47,7 +49,7 @@
 | **可变性** | 线程内 append,结束冻结 | **可变:能改、能删**(事实会过时/被推翻) | **不可变**:run 即 run,只能 fork 取代 |
 | **进 context 方式** | 结构化摘要,选择性浮现 | 会话开始注入常驻小集 + 预填 1.4 默认 | **不自动进**,靠显式寻址检索 |
 | **寻址键** | session_id + turn_index | user_id(单人期 = project-global) | run_id + lineage |
-| **QuantBench 现状** | 无(1.5 做) | 无(本文档) | **已有** `library/` |
+| **QuantBench 现状** | **已落地**:`runs/_sessions/` + Web 线程 | **已落地**:`memory/user/` + `INDEX.md` + consolidation | **已有** `library/` |
 
 一句话区分 ② 与 ③:**③ 是原始 run;② 是从一堆 ③ 里跨会话归纳出的、经策展的"关于用户的模式"。② 是 ③ 的有损压缩 + 人味泛化,不是再存一份 run。**
 
@@ -128,9 +130,9 @@ Session 是"工作线程的上下文**选择与寻址**",不是"存储"——③
 | 流动 | 落点 | 状态 |
 |---|---|---|
 | ① → ③ run 落库 | `library/record.build_record` + manifest | 已有 |
-| ③ → ① 检索/fork | `fork_previous_run` 工具 + `ExperimentIndex` | 1.5 |
-| ② → ①/1.4 注入默认 | 会话起注入 `INDEX.md` 常驻集;预填审查台默认 | 新(依赖 1.4/1.5) |
-| ① → ② 晋升 | 记忆固化 SubAgent(session 末 + 周期扫);会话内可见 | 新(依赖 1.5) |
+| ③ → ① 检索/fork | `fork_previous_run` 工具 + `ExperimentIndex` | 已落地 |
+| ② → ①/1.4 注入默认 | 会话起注入 `INDEX.md` 常驻集;预填审查台默认 | 已落地 |
+| ① → ② 晋升 | 记忆固化 SubAgent(session 末 + 周期扫);会话内可见 | 已落地 |
 
 ---
 
@@ -176,4 +178,4 @@ Session 是"工作线程的上下文**选择与寻址**",不是"存储"——③
 
 ---
 
-*落地后回填 [PHASE13B.md](PHASE13B.md)(② 作为 1.5 之后的新增项)与 [GAP_ANALYSIS.md](GAP_ANALYSIS.md),并在本文件标注各层完成状态。*
+*2026-07-04 已回填 [PHASE13B.md](PHASE13B.md) 与 [GAP_ANALYSIS.md](GAP_ANALYSIS.md),并在本文件标注各层完成状态。*
