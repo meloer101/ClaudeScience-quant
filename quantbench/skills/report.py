@@ -51,7 +51,7 @@ def build_research_note(
 
 ## 执行假设
 - 信号时间: {execution.get("signal_time", "close_t")}
-- 成交价格: {execution.get("fill_price", "close_t")}
+- 成交价格: {execution.get("fill_price", "open_t+1")}
 
 ## 结果
 | 指标 | 数值 |
@@ -152,7 +152,7 @@ def build_cross_sectional_research_note(
 
 ## 执行与现实性假设
 - 信号时间: {execution.get("signal_time", "close_t")}
-- 成交价格: {execution.get("fill_price", "close_t")}
+- 成交价格: {execution.get("fill_price", "open_t+1")}
 - 成本模型: {config.get("cost_model", "fixed_bps")}
 - 做空/borrow: {config.get("borrow_model", "not_applied")}
 - 中性化: {", ".join(config.get("neutralize") or []) or "off"}

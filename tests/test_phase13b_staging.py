@@ -113,9 +113,10 @@ def test_api_staging_confirm_advances_waiting_run(tmp_path, monkeypatch):
     from quantbench.artifact.store import ArtifactStore
     from quantbench.api import server as server_mod
 
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr(run_manager_mod, "RUNS_DIR", tmp_path)
     server_mod._manager = run_manager_mod.RunManager(run_store=ArtifactStore(tmp_path))
-    client = TestClient(server_mod.app)
+    client = TestClient(server_mod.app, headers={"X-QuantBench-Token": "test-token"})
 
     run_id = client.post("/api/runs", json={"request": "测试一个有未来函数嫌疑的信号"}).json()["run_id"]
 

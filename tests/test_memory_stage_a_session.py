@@ -101,6 +101,7 @@ def test_session_api_creates_session_runs_turn_and_returns_thread(tmp_path, monk
     from quantbench.api import run_reader
     from quantbench.api import server as server_mod
 
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr(run_reader, "RUNS_DIR", tmp_path)
 
     class FakeManager:
@@ -112,7 +113,7 @@ def test_session_api_creates_session_runs_turn_and_returns_thread(tmp_path, monk
             return "run_20260704_000000_abcd"
 
     server_mod._manager = FakeManager()
-    client = TestClient(server_mod.app)
+    client = TestClient(server_mod.app, headers={"X-QuantBench-Token": "test-token"})
 
     created = client.post("/api/sessions").json()
     session_id = created["session_id"]

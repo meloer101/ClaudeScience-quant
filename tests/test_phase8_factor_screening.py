@@ -112,6 +112,7 @@ def test_screen_factors_creates_child_runs_parent_links_and_sorted_summary(tmp_p
                         "timeframe": "1d",
                         "n_groups": 3,
                         "cost_bps": 0,
+                        "execution": {"fill_price": "close_t"},
                     },
                 )
             ],

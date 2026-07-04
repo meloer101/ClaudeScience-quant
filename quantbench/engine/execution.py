@@ -8,7 +8,7 @@ import pandas as pd
 @dataclass(frozen=True)
 class ExecutionConfig:
     signal_time: str = "close_t"
-    fill_price: str = "close_t"
+    fill_price: str = "open_t+1"
 
     def __post_init__(self) -> None:
         allowed = {"close_t", "open_t+1", "close_t+1"}

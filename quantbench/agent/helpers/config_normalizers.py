@@ -14,7 +14,7 @@ def _execution_config(execution: dict[str, str] | ExecutionConfig | None) -> Exe
         return ExecutionConfig()
     return ExecutionConfig(
         signal_time=str(execution.get("signal_time") or "close_t"),
-        fill_price=str(execution.get("fill_price") or "close_t"),
+        fill_price=str(execution.get("fill_price") or "open_t+1"),
     )
 
 

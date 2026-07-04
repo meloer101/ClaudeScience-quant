@@ -51,7 +51,7 @@
 - **Crypto point-in-time 重建**:代码已完整落地(见「二、已完成」),**不再是缺口**——剩下的只是"快照攒够时间跨度"这件事,会随时间自然发生,不需要额外工程。
 
 ### 第四章 · 产品形态(🟡 剩两项,均为刻意推后)
-- [ ] **4.3 文献接入(未做)**:PDF/arXiv → 提取因子定义 → 生成 compute → 走审查流程 + 复现对比表。这是 SubAgent 抽象的第四个实例(继 Critic、记忆固化、之后可能还有其他角色),差异化价值高,非正确性缺口。
+- [x] **4.3 文献接入已落地**:支持 arXiv ingest、本地 PDF 上传/CLI ingest、paper viewer、selection-grounded QA、paper-to-run reproduce。安全修订后，Web/API 不再接受裸本地路径，本地 PDF 通过上传接口导入。
 - [ ] **4.5 Docker 沙箱**(设计推后):受限子进程已覆盖 80%;macOS 上 RLIMIT_AS 无效是已知平台差异。真实需要更强隔离时再上。
 - [ ] 审查台/CLI 交互增强(staging 的完整 plan-first 上游对象、CLI 内联编辑)——非阻塞增强项。
 

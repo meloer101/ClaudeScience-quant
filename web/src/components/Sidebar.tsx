@@ -11,6 +11,7 @@ interface SidebarProps {
   onSelect: (runId: string) => void;
   onOpenPaper: (paperId: string) => void;
   onImportPaper: (source: string) => Promise<void>;
+  onUploadPaper?: (file: File) => Promise<void>;
   onNew: () => void;
   compareRunIds: string[];
   onToggleCompare: (runId: string) => void;
@@ -26,11 +27,13 @@ function LiteratureSection({
   activePaperId,
   onOpenPaper,
   onImportPaper,
+  onUploadPaper,
 }: {
   papers: PaperSummary[];
   activePaperId: string | null;
   onOpenPaper: (paperId: string) => void;
   onImportPaper: (source: string) => Promise<void>;
+  onUploadPaper?: (file: File) => Promise<void>;
 }) {
   const [source, setSource] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,6 +54,21 @@ function LiteratureSection({
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onUploadPaper || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onUploadPaper(file);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+      e.target.value = "";
+    }
+  };
+
   return (
     <div className="px-3 pb-3 border-b border-warm-100">
       <div className="text-xs font-medium text-warm-500 mb-2 px-1">Literature</div>
@@ -61,7 +79,7 @@ function LiteratureSection({
           onKeyDown={(e) => {
             if (e.key === "Enter") void submit();
           }}
-          placeholder="arXiv URL / 本地 PDF 路径"
+          placeholder="arXiv URL / ID"
           className="flex-1 min-w-0 text-xs border border-warm-150 rounded-md bg-white px-1.5 py-1"
         />
         <button
@@ -71,6 +89,12 @@ function LiteratureSection({
         >
           {busy ? "…" : "导入"}
         </button>
+        {onUploadPaper && (
+          <label className="text-xs px-2 py-1 rounded-md bg-warm-100 text-warm-700 hover:bg-warm-200 cursor-pointer">
+            PDF
+            <input type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
+          </label>
+        )}
       </div>
       {error && <div className="text-[10px] text-danger-600 mb-1 px-1 break-words">{error}</div>}
       {papers.length > 0 && (
@@ -149,6 +173,7 @@ export function Sidebar({
   onSelect,
   onOpenPaper,
   onImportPaper,
+  onUploadPaper,
   onNew,
   compareRunIds,
   onToggleCompare,
@@ -255,6 +280,7 @@ export function Sidebar({
         activePaperId={activePaperId}
         onOpenPaper={onOpenPaper}
         onImportPaper={onImportPaper}
+        onUploadPaper={onUploadPaper}
       />
       <div className="flex-1 overflow-y-auto pb-2">
         {isLoading && <div className="px-3 py-2 text-sm text-warm-400">Loading…</div>}

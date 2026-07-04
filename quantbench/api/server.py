@@ -4,9 +4,11 @@ import json
 from dataclasses import asdict
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+
+from quantbench.api.security import allowed_origins, require_api_token
 
 from quantbench.api import run_reader
 from quantbench.api.run_manager import RunManager
@@ -53,14 +55,16 @@ async def _lifespan(app: FastAPI):
     _self._manager.cancel_all()
 
 
-app = FastAPI(title="QuantBench API", lifespan=_lifespan)
+app = FastAPI(title="QuantBench API", lifespan=_lifespan, dependencies=[Depends(require_api_token)])
 
 # Local single-user tool; the frontend dev server runs on a different port.
+# Origins and methods are restricted to configured localhost origins;
+# the API token is checked separately on each protected route.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins(),
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-QuantBench-Token"],
 )
 
 
@@ -371,12 +375,29 @@ def list_papers() -> list[PaperSummary]:
 def ingest_paper(payload: IngestPaperRequest) -> PaperSummary:
     if not payload.source.strip():
         raise HTTPException(status_code=400, detail="source must not be empty")
-    from quantbench.literature.ingest import ingest_and_store
+    from quantbench.literature.ingest import is_arxiv_reference, ingest_arxiv_with_bytes
 
+    source = payload.source.strip()
+    if not is_arxiv_reference(source):
+        raise HTTPException(status_code=400, detail="Local PDFs must be imported with the upload endpoint.")
     try:
-        paper = ingest_and_store(payload.source.strip(), _paper_store())
+        paper, pdf_bytes = ingest_arxiv_with_bytes(source)
+        _paper_store().save(paper, pdf_bytes=pdf_bytes)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return PaperSummary(**paper.metadata_dict())
+
+
+@app.post("/api/literature/ingest/upload", response_model=PaperSummary)
+async def upload_paper(file: UploadFile = File(...)) -> PaperSummary:
+    from quantbench.literature.ingest import ingest_upload_with_bytes
+
+    pdf_bytes = await file.read()
+    try:
+        paper, raw_pdf = ingest_upload_with_bytes(file.filename or "upload.pdf", pdf_bytes)
+        _paper_store().save(paper, pdf_bytes=raw_pdf)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     return PaperSummary(**paper.metadata_dict())

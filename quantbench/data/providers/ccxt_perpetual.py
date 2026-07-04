@@ -66,8 +66,24 @@ def fetch_funding_rate(symbol: str, start: str, end: str) -> ProviderResult:
     exchange = _build_exchange()
     resolved_symbol = _resolve_swap_symbol(exchange, symbol)
     since = exchange.parse8601(f"{start}T00:00:00Z")
+    end_ms = exchange.parse8601(f"{end}T00:00:00Z")
     end_ts = pd.Timestamp(end, tz="UTC")
-    rows = exchange.fetch_funding_rate_history(resolved_symbol, since=since, limit=1000)
+    rows = []
+    while since < end_ms:
+        batch = exchange.fetch_funding_rate_history(resolved_symbol, since=since, limit=1000)
+        if not batch:
+            break
+        rows.extend(batch)
+        timestamps = [int(item["timestamp"]) for item in batch if item.get("timestamp") is not None]
+        if not timestamps:
+            break
+        last_ts = max(timestamps)
+        next_since = last_ts + 1
+        if next_since <= since:
+            break
+        since = next_since
+        if last_ts >= end_ms:
+            break
     frame = pd.DataFrame(rows)
     if frame.empty:
         return ProviderResult(

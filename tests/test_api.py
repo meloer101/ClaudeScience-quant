@@ -27,10 +27,11 @@ def _write_fake_completed_run(runs_dir, run_id="run_20260701_000000_aaaa"):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
     from quantbench.api.server import app
 
-    return TestClient(app)
+    return TestClient(app, headers={"X-QuantBench-Token": "test-token"})
 
 
 def test_list_runs_returns_summaries(tmp_path, client):
@@ -269,7 +270,9 @@ def test_list_runs_shows_request_and_today_for_in_progress_run(tmp_path, client)
 def test_create_run_starts_in_background_and_completes(tmp_path, monkeypatch):
     from _fakes import FakeLLMClient
 
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.data.cache.DATA_CACHE_DIR", tmp_path / "data_cache")
     monkeypatch.setattr(
         "quantbench.agent.coordinator.LLMClient",
@@ -294,7 +297,7 @@ def test_create_run_starts_in_background_and_completes(tmp_path, monkeypatch):
 
     server_mod._manager = run_manager_mod.RunManager(run_store=ArtifactStore(tmp_path))
 
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-QuantBench-Token": "test-token"})
     response = client.post("/api/runs", json={"request": "测试一个简单信号"})
     assert response.status_code == 200
     run_id = response.json()["run_id"]
@@ -317,6 +320,7 @@ def test_stream_run_events_emits_tool_lifecycle_events(tmp_path, monkeypatch):
     from _fakes import FakeLLMClient
 
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.data.cache.DATA_CACHE_DIR", tmp_path / "data_cache")
     monkeypatch.setattr(
         "quantbench.agent.coordinator.LLMClient",
@@ -336,7 +340,7 @@ def test_stream_run_events_emits_tool_lifecycle_events(tmp_path, monkeypatch):
     from quantbench.api import server as server_mod
 
     server_mod._manager = run_manager_mod.RunManager(run_store=ArtifactStore(tmp_path))
-    test_client = TestClient(server_mod.app)
+    test_client = TestClient(server_mod.app, headers={"X-QuantBench-Token": "test-token"})
 
     response = test_client.post("/api/runs", json={"request": "测试一个简单信号"})
     run_id = response.json()["run_id"]
@@ -358,10 +362,11 @@ def test_stream_run_events_emits_tool_lifecycle_events(tmp_path, monkeypatch):
 
 
 def test_stream_run_events_ends_immediately_for_untracked_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
     from quantbench.api.server import app
 
-    test_client = TestClient(app)
+    test_client = TestClient(app, headers={"X-QuantBench-Token": "test-token"})
     with test_client.stream("GET", "/api/runs/some_unknown_run/events") as stream:
         lines = list(stream.iter_lines())
     assert lines == []
@@ -445,6 +450,7 @@ def test_library_api_summary_compare_and_lineage(tmp_path, client):
 
 
 def test_fork_endpoint_delegates_to_run_manager(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
     from quantbench.api import server as server_mod
 
@@ -455,7 +461,7 @@ def test_fork_endpoint_delegates_to_run_manager(tmp_path, monkeypatch):
             return "run_20260701_000002_fork"
 
     monkeypatch.setattr(server_mod, "_manager", FakeManager())
-    test_client = TestClient(server_mod.app)
+    test_client = TestClient(server_mod.app, headers={"X-QuantBench-Token": "test-token"})
 
     response = test_client.post("/api/runs/run_20260701_000000_a/fork", json={"modification": "把窗口改成60日"})
 
@@ -486,6 +492,7 @@ def test_cancel_endpoint_marks_orphaned_running_run_cancelled_after_restart(tmp_
     run_dir = tmp_path / run_id
     run_dir.mkdir()
     (run_dir / "request.txt").write_text("之前没跑完的任务", encoding="utf-8")
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
 
     from quantbench.api import server as server_mod
@@ -496,7 +503,7 @@ def test_cancel_endpoint_marks_orphaned_running_run_cancelled_after_restart(tmp_
             return False
 
     monkeypatch.setattr(server_mod, "_manager", FakeManager())
-    test_client = TestClient(server_mod.app)
+    test_client = TestClient(server_mod.app, headers={"X-QuantBench-Token": "test-token"})
 
     response = test_client.post(f"/api/runs/{run_id}/cancel")
 
@@ -520,6 +527,7 @@ def test_cancel_endpoint_stops_a_run_before_it_reaches_the_step_limit(tmp_path, 
     fetch_args = {"symbol": "BTC/USDT", "timeframe": "4h", "start": "2023-01-01", "end": "2023-02-01"}
     fake = SlowFakeLLMClient([("tools", [("fetch_ohlcv", fetch_args)])] * 20)
 
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path)
     monkeypatch.setattr("quantbench.data.cache.DATA_CACHE_DIR", tmp_path / "data_cache")
     monkeypatch.setattr("quantbench.agent.coordinator.LLMClient", lambda model: fake)
@@ -531,7 +539,7 @@ def test_cancel_endpoint_stops_a_run_before_it_reaches_the_step_limit(tmp_path, 
     from quantbench.api import server as server_mod
 
     server_mod._manager = run_manager_mod.RunManager(run_store=ArtifactStore(tmp_path))
-    test_client = TestClient(server_mod.app)
+    test_client = TestClient(server_mod.app, headers={"X-QuantBench-Token": "test-token"})
 
     run_id = test_client.post("/api/runs", json={"request": "测试一个简单信号"}).json()["run_id"]
 

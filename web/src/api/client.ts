@@ -16,9 +16,19 @@ import type {
   RunSummary,
 } from "../types";
 
+const apiToken = import.meta.env.VITE_QUANTBENCH_API_TOKEN as string | undefined;
+
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  return {
+    "Content-Type": "application/json",
+    ...(apiToken ? { "X-QuantBench-Token": apiToken } : {}),
+    ...(extra ?? {}),
+  };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     ...init,
   });
   if (!response.ok) {
@@ -116,6 +126,18 @@ export function ingestPaper(source: string): Promise<PaperSummary> {
     method: "POST",
     body: JSON.stringify({ source }),
   });
+}
+
+export async function uploadPaper(file: File): Promise<PaperSummary> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch("/api/literature/ingest/upload", {
+    method: "POST",
+    headers: apiToken ? { "X-QuantBench-Token": apiToken } : undefined,
+    body,
+  });
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${await response.text()}`);
+  return response.json() as Promise<PaperSummary>;
 }
 
 export function getPaper(paperId: string): Promise<PaperDetail> {

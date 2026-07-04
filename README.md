@@ -71,6 +71,12 @@ research_note.md
 manifest.json
 ```
 
+## Local API Safety
+
+QuantBench is a local single-user research tool. Start the API with `QUANTBENCH_API_TOKEN` set, keep it bound to localhost, and do not expose the port to a network. The web client sends `X-QuantBench-Token`; cross-origin browser access is restricted to configured localhost origins.
+
+The default execution convention is `open_t+1`. `close_t` remains available only as an explicitly optimistic diagnostic assumption and is flagged by Reviewer.
+
 ## 快速开始
 
 安装 Python 依赖：

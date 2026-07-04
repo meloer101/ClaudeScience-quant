@@ -141,6 +141,8 @@ def _run_screen_candidate(
                 "funding_rows": len(funding_rates),
                 "funding_sources": (funding_meta or {}).get("sources", {}),
             }
+        if funding_meta is not None:
+            funding_meta = {**funding_meta, "alignment": backtest.funding_coverage}
         ctx.last_metrics = backtest.metrics
 
         panel_path = child.run_dir / "panel.parquet"
@@ -220,6 +222,7 @@ def _run_screen_candidate(
             ic_series=backtest.ic_series,
             ic_significance=backtest.ic_significance,
             mcp_calls=ctx.mcp_calls,
+            execution=execution.to_dict(),
         )
         ctx.review_report = review_report
         child.save_json("review_report.json", review_report.to_dict())

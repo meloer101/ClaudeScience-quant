@@ -44,6 +44,8 @@ def test_cross_sectional_backtest_subtracts_funding_by_position_direction():
 def test_ccxt_funding_rate_history_normalizes_rows(monkeypatch):
     from quantbench.data.providers import ccxt_perpetual
 
+    eight_hours_ms = 8 * 60 * 60 * 1000
+
     class FakeExchange:
         def load_markets(self):
             return {"BTC/USDT:USDT": {"swap": True, "quote": "USDT"}}
@@ -53,10 +55,12 @@ def test_ccxt_funding_rate_history_normalizes_rows(monkeypatch):
 
         def fetch_funding_rate_history(self, symbol, since=None, limit=None):
             assert symbol == "BTC/USDT:USDT"
-            return [
-                {"timestamp": since, "fundingRate": "0.0001"},
-                {"timestamp": since + 8 * 60 * 60 * 1000, "fundingRate": 0.0002},
+            # Return only rows where timestamp >= since (simulating real exchange behaviour)
+            all_rows = [
+                {"timestamp": 1704067200000, "fundingRate": "0.0001"},  # 2024-01-01 00:00
+                {"timestamp": 1704067200000 + eight_hours_ms, "fundingRate": 0.0002},  # 2024-01-01 08:00
             ]
+            return [r for r in all_rows if r["timestamp"] >= since]
 
     monkeypatch.setattr(ccxt_perpetual, "_build_exchange", lambda: FakeExchange())
 
@@ -65,6 +69,42 @@ def test_ccxt_funding_rate_history_normalizes_rows(monkeypatch):
     assert result.source.startswith("ccxt_")
     assert result.df.columns.tolist() == ["timestamp", "funding_rate"]
     assert result.df["funding_rate"].tolist() == [0.0001, 0.0002]
+
+
+def test_ccxt_funding_rate_history_paginates_until_end(monkeypatch):
+    from quantbench.data.providers import ccxt_perpetual
+
+    eight_hours_ms = 8 * 60 * 60 * 1000
+    calls = []
+
+    class FakeExchange:
+        def load_markets(self):
+            return {"BTC/USDT": {"symbol": "BTC/USDT", "swap": True}}
+
+        def parse8601(self, value):
+            return int(pd.Timestamp(value).timestamp() * 1000)
+
+        def fetch_funding_rate_history(self, symbol, since=None, limit=None):
+            calls.append(since)
+            if len(calls) == 1:
+                return [
+                    {"timestamp": since, "fundingRate": "0.01"},
+                    {"timestamp": since + eight_hours_ms, "fundingRate": "0.02"},
+                ]
+            if len(calls) == 2:
+                return [
+                    {"timestamp": since, "fundingRate": "0.03"},
+                    {"timestamp": since + eight_hours_ms, "fundingRate": "0.04"},
+                ]
+            return []
+
+    monkeypatch.setattr(ccxt_perpetual, "_build_exchange", lambda: FakeExchange())
+
+    result = ccxt_perpetual.fetch_funding_rate("BTC/USDT", "2024-01-01", "2024-01-03")
+
+    assert len(calls) == 3
+    assert result.df["funding_rate"].tolist() == [0.01, 0.02, 0.03, 0.04]
+    assert calls[1] > calls[0]
 
 
 def test_provider_result_records_adjustment_metadata():

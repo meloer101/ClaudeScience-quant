@@ -93,7 +93,7 @@ RUN_SIGNAL_BACKTEST_PARAMS = {
         },
         "execution": {
             "type": "object",
-            "description": "Execution assumption; fill_price may be close_t, open_t+1, or close_t+1. Default close_t.",
+            "description": "Execution assumption; fill_price may be close_t, open_t+1, or close_t+1. Default open_t+1. Use close_t only as an explicitly optimistic diagnostic convention.",
             "properties": {
                 "signal_time": {"type": "string"},
                 "fill_price": {"type": "string"},
@@ -147,7 +147,7 @@ RUN_CROSS_SECTIONAL_BACKTEST_PARAMS = {
         "cost_bps": {"type": "number", "description": "Round-trip trading cost in basis points. Default 5."},
         "execution": {
             "type": "object",
-            "description": "Execution assumption; fill_price may be close_t, open_t+1, or close_t+1. Default close_t.",
+            "description": "Execution assumption; fill_price may be close_t, open_t+1, or close_t+1. Default open_t+1. Use close_t only as an explicitly optimistic diagnostic convention.",
             "properties": {
                 "signal_time": {"type": "string"},
                 "fill_price": {"type": "string"},
@@ -281,8 +281,6 @@ CHECK_RUN_DECAY_PARAMS = {
 }
 
 
-CRYPTO_PERPETUAL_FUNDING_WARNING = (
-    "Crypto perpetual backtests do not model funding rate carry cost. Long-short "
-    "positions held across funding intervals may have systematically biased PnL "
-    "that this backtest does not capture."
+CRYPTO_PERPETUAL_FUNDING_COVERAGE_WARNING = (
+    "Crypto perpetual funding coverage is incomplete; funding-adjusted PnL may still be biased."
 )

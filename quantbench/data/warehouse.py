@@ -332,6 +332,15 @@ def fetch_universe_funding_rates(
         "symbols_fetched": fetched,
         "failed": failed,
         "sources": sources,
+        "coverage": {
+            "start": start,
+            "end": end,
+            "symbols": len(universe.symbols),
+            "raw_rows": len(panel),
+            "symbols_with_rows": int(panel["symbol"].nunique()) if not panel.empty else 0,
+            "missing_symbols": sorted(set(universe.symbols) - set(panel["symbol"].astype(str))) if not panel.empty else sorted(universe.symbols),
+            "failed_symbols": sorted(failed),
+        },
     }
 
 

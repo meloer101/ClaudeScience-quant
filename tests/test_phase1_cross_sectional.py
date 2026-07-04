@@ -43,12 +43,14 @@ def _panel() -> pd.DataFrame:
 
 def test_cross_sectional_backtest_uses_factor_for_next_period_returns():
     from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
+    from quantbench.engine.execution import ExecutionConfig
 
     def compute(df):
         scores = {"WIN": 3.0, "MID": 2.0, "LOS": 1.0}
         return pd.Series(scores[df["symbol"].iloc[0]], index=df.index)
 
-    result = run_cross_sectional_backtest(_panel(), compute, n_groups=3, cost_bps=0)
+    result = run_cross_sectional_backtest(_panel(), compute, n_groups=3, cost_bps=0,
+                                          execution=ExecutionConfig(fill_price="close_t"))
 
     assert result.returns.iloc[0] == 0
     assert round(result.returns.iloc[1], 6) == 0.2

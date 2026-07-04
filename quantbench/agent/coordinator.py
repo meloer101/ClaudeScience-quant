@@ -318,6 +318,10 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
                 "funding_sources": (funding_meta or {}).get("sources", {}),
             }
 
+        if funding_meta is not None:
+            funding_meta = {**funding_meta, "alignment": backtest.funding_coverage}
+            ctx.funding_meta = funding_meta
+
         ctx.signal_code = code
         ctx.last_metrics = backtest.metrics
         ctx.cost_bps = cost_bps
@@ -427,6 +431,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
             ic_series=backtest.ic_series,
             ic_significance=backtest.ic_significance,
             mcp_calls=ctx.mcp_calls,
+            execution=execution_config.to_dict(),
         )
         ctx.review_report = review_report
         run.save_json("review_report.json", review_report.to_dict())

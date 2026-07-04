@@ -16,6 +16,7 @@ def test_borrow_cost_only_charges_short_weights():
 
 def test_cross_sectional_backtest_reports_short_contribution_share():
     from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
+    from quantbench.engine.execution import ExecutionConfig
 
     timestamps = pd.date_range("2024-01-01", periods=4, freq="1D", tz="UTC")
     rows = []
@@ -39,7 +40,8 @@ def test_cross_sectional_backtest_reports_short_contribution_share():
     def compute(df):
         return pd.Series(scores[df["symbol"].iloc[0]], index=df.index)
 
-    result = run_cross_sectional_backtest(panel, compute, n_groups=2, cost_bps=0)
+    result = run_cross_sectional_backtest(panel, compute, n_groups=2, cost_bps=0,
+                                          execution=ExecutionConfig(fill_price="close_t"))
 
     assert result.long_short_contribution["short_share"] > 0.7
     assert result.to_json_dict()["long_short_contribution"]["short_share"] > 0.7

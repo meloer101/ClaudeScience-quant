@@ -214,6 +214,7 @@ class StagingGate:
             "gate_decision": asdict(decision),
             "overrides": overrides,
             "staged_diff": {},
+            "config": dict(original_config),
         }
 
         if decision.should_stage:

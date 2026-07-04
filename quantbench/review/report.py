@@ -120,6 +120,7 @@ def run_review(
     ic_series: pd.Series | None = None,
     ic_significance: ICSignificance | dict[str, Any] | None = None,
     mcp_calls: list[dict[str, Any]] | None = None,
+    execution: dict[str, Any] | None = None,
 ) -> ReviewReport:
     findings: list[ReviewFinding] = []
     findings.extend(_safe("lookahead", lambda: _lookahead_findings(code)))
@@ -152,6 +153,8 @@ def run_review(
         findings.append(_borrow_cost_finding(borrow_cost_sensitivity))
     if mcp_calls:
         findings.append(_external_data_finding(mcp_calls))
+    if execution is not None:
+        findings.append(_execution_assumption_finding(execution))
     verdict, reason = determine_verdict(findings)
     return ReviewReport(findings=findings, verdict=verdict, verdict_reason=reason)
 
@@ -330,6 +333,21 @@ def _borrow_cost_finding(detail: dict[str, Any]) -> ReviewFinding:
     severity = "warning" if decay > 0.5 else "pass"
     message = f"Borrow-adjusted Sharpe changed from {float(before):.3f} to {float(after):.3f} (decay {decay:.3f})."
     return ReviewFinding("borrow_cost_sensitivity", severity, message, detail)
+
+
+def _execution_assumption_finding(execution: dict[str, Any] | None) -> ReviewFinding:
+    fill_price = str((execution or {}).get("fill_price") or "open_t+1")
+    detail = {"fill_price": fill_price, "signal_time": str((execution or {}).get("signal_time") or "close_t")}
+    if fill_price == "close_t":
+        return ReviewFinding(
+            "execution_assumption",
+            "warning",
+            "Backtest uses optimistic close_t fills; signals formed at close_t are assumed executable at that same close.",
+            detail,
+        )
+    if fill_price == "open_t+1":
+        return ReviewFinding("execution_assumption", "pass", "Backtest uses next-open fills after close_t signal formation.", detail)
+    return ReviewFinding("execution_assumption", "info", f"Backtest uses explicit fill assumption {fill_price}.", detail)
 
 
 def _external_data_finding(mcp_calls: list[dict[str, Any]]) -> ReviewFinding:

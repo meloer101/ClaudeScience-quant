@@ -388,7 +388,8 @@ def test_cli_monitor_check_all_alive(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_get_monitoring_report_endpoint(tmp_path):
+def test_get_monitoring_report_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     run_dir = tmp_path / "runs" / "run_x"
     run_dir.mkdir(parents=True)
     (run_dir / "manifest.json").write_text(json.dumps({"run_id": "run_x"}), encoding="utf-8")
@@ -409,7 +410,7 @@ def test_get_monitoring_report_endpoint(tmp_path):
 
     from quantbench.api.server import app
 
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-QuantBench-Token": "test-token"})
     response = client.get("/api/runs/run_x/monitoring")
     assert response.status_code == 200
     assert response.json()["history"] == history
@@ -419,6 +420,7 @@ def test_get_monitoring_report_endpoint(tmp_path):
 
 
 def test_trigger_monitoring_check_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     import quantbench.monitor.pipeline as pipeline_mod
 
     run_dir = tmp_path / "runs" / "run_y"
@@ -429,7 +431,7 @@ def test_trigger_monitoring_check_endpoint(tmp_path, monkeypatch):
 
     from quantbench.api.server import app
 
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-QuantBench-Token": "test-token"})
     response = client.post("/api/runs/run_y/monitoring/check")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
@@ -438,7 +440,8 @@ def test_trigger_monitoring_check_endpoint(tmp_path, monkeypatch):
     assert missing.status_code == 404
 
 
-def test_list_runs_includes_monitoring_status(tmp_path):
+def test_list_runs_includes_monitoring_status(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     run_dir = tmp_path / "runs" / "run_z"
     run_dir.mkdir(parents=True)
     manifest = {
@@ -451,7 +454,7 @@ def test_list_runs_includes_monitoring_status(tmp_path):
 
     from quantbench.api.server import app
 
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-QuantBench-Token": "test-token"})
     response = client.get("/api/runs")
     assert response.status_code == 200
     body = response.json()

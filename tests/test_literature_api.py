@@ -6,21 +6,24 @@ from _pdf_fixture import make_text_pdf
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUANTBENCH_API_TOKEN", "test-token")
     monkeypatch.setattr("quantbench.api.run_reader.RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr("quantbench.literature.store.LITERATURE_DIR", tmp_path / "lit")
     from quantbench.api.server import app
 
-    return TestClient(app)
+    return TestClient(app, headers={"X-QuantBench-Token": "test-token"})
 
 
-def _ingest_local(tmp_path, client, pages):
-    pdf = tmp_path / "paper.pdf"
-    pdf.write_bytes(make_text_pdf(pages))
-    return client.post("/api/literature/ingest", json={"source": str(pdf)})
+def _ingest_upload(client, pages):
+    pdf_bytes = make_text_pdf(pages)
+    return client.post(
+        "/api/literature/ingest/upload",
+        files={"file": ("paper.pdf", pdf_bytes, "application/pdf")},
+    )
 
 
 def test_ingest_list_and_get_paper(tmp_path, client):
-    resp = _ingest_local(tmp_path, client, [["Momentum Paper", "12-1 signal."], ["Sharpe 0.9."]])
+    resp = _ingest_upload(client, [["Momentum Paper", "12-1 signal."], ["Sharpe 0.9."]])
     assert resp.status_code == 200
     paper_id = resp.json()["paper_id"]
     assert resp.json()["title"] == "Momentum Paper"
@@ -35,7 +38,7 @@ def test_ingest_list_and_get_paper(tmp_path, client):
 
 
 def test_get_paper_pdf_returns_bytes(tmp_path, client):
-    paper_id = _ingest_local(tmp_path, client, [["Title", "Body"]]).json()["paper_id"]
+    paper_id = _ingest_upload(client, [["Title", "Body"]]).json()["paper_id"]
     resp = client.get(f"/api/literature/{paper_id}/pdf")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
@@ -47,9 +50,15 @@ def test_get_missing_paper_404(client):
     assert client.get("/api/literature/deadbeef/pdf").status_code == 404
 
 
-def test_ingest_rejects_missing_file(client):
+def test_ingest_rejects_local_path(client):
     resp = client.post("/api/literature/ingest", json={"source": "/nope/missing.pdf"})
-    assert resp.status_code == 404
+    assert resp.status_code == 400
+    assert "upload" in resp.text.lower()
+
+
+def test_ingest_rejects_empty_source(client):
+    resp = client.post("/api/literature/ingest", json={"source": "  "})
+    assert resp.status_code == 400
 
 
 def test_ask_endpoint_grounds_on_selection(tmp_path, client, monkeypatch):
@@ -65,8 +74,8 @@ def test_ask_endpoint_grounds_on_selection(tmp_path, client, monkeypatch):
 
     monkeypatch.setattr("quantbench.agent.llm.LLMClient.chat", fake_chat)
 
-    paper_id = _ingest_local(
-        tmp_path, client, [["Intro"], ["The 12-1 momentum signal skips the last month."]]
+    paper_id = _ingest_upload(
+        client, [["Intro"], ["The 12-1 momentum signal skips the last month."]]
     ).json()["paper_id"]
 
     resp = client.post(
@@ -83,13 +92,13 @@ def test_ask_endpoint_grounds_on_selection(tmp_path, client, monkeypatch):
 
 
 def test_ask_requires_question(tmp_path, client):
-    paper_id = _ingest_local(tmp_path, client, [["a"], ["b"]]).json()["paper_id"]
+    paper_id = _ingest_upload(client, [["a"], ["b"]]).json()["paper_id"]
     resp = client.post(f"/api/literature/{paper_id}/ask", json={"selection": "x", "question": "  "})
     assert resp.status_code == 400
 
 
 def test_reproduce_endpoint_launches_run(tmp_path, client, monkeypatch):
-    paper_id = _ingest_local(tmp_path, client, [["a"], ["b"]]).json()["paper_id"]
+    paper_id = _ingest_upload(client, [["a"], ["b"]]).json()["paper_id"]
 
     calls = {}
 

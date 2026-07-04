@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { StagingArtifact } from "../types";
+import type { StagingArtifact, StagingConfig } from "../types";
 
 interface StagingReviewPanelProps {
   artifact: StagingArtifact;
@@ -13,8 +13,9 @@ function formatNumber(value: unknown): string {
 
 export function StagingReviewPanel({ artifact, isAwaiting, onConfirm }: StagingReviewPanelProps) {
   const initialCode = artifact.factor_spec?.code ?? "";
+  const initialConfig = artifact.config ?? {};
   const [code, setCode] = useState(initialCode);
-  const [costBps, setCostBps] = useState("");
+  const [configDraft, setConfigDraft] = useState<StagingConfig>(initialConfig);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const report = artifact.validation_report;
   const issues = report?.lookahead_issues ?? [];
@@ -31,10 +32,11 @@ export function StagingReviewPanel({ artifact, isAwaiting, onConfirm }: StagingR
     [artifact.gate_decision?.cost_score, artifact.gate_decision?.risk_score, report],
   );
 
+  const setConfig = (patch: Partial<StagingConfig>) =>
+    setConfigDraft((prev) => ({ ...prev, ...patch }));
+
   const submit = async () => {
-    const config: Record<string, unknown> = {};
-    if (costBps.trim()) config.cost_bps = Number(costBps);
-    const overrides: Record<string, unknown> = { config };
+    const overrides: Record<string, unknown> = { config: configDraft };
     if (code !== initialCode) overrides.code = code;
     setIsSubmitting(true);
     try {
@@ -87,13 +89,51 @@ export function StagingReviewPanel({ artifact, isAwaiting, onConfirm }: StagingR
       />
 
       <div className="flex flex-wrap items-center gap-2">
+        <label className="text-xs text-warm-500">
+          Fill price
+          <select
+            value={configDraft.execution?.fill_price ?? "open_t+1"}
+            onChange={(e) =>
+              setConfig({ execution: { ...configDraft.execution, fill_price: e.target.value as StagingConfig["execution"] extends { fill_price?: infer T } ? T : "open_t+1" | "close_t" | "close_t+1" } })
+            }
+            className="ml-1 border border-warm-200 rounded-lg px-2 py-1.5 text-sm"
+            aria-label="Fill price"
+          >
+            <option value="open_t+1">open_t+1</option>
+            <option value="close_t+1">close_t+1</option>
+            <option value="close_t">close_t</option>
+          </select>
+        </label>
+        <label className="text-xs text-warm-500">
+          Groups
+          <input
+            value={configDraft.n_groups ?? ""}
+            onChange={(e) => setConfig({ n_groups: e.target.value ? Number(e.target.value) : undefined })}
+            placeholder="n_groups"
+            inputMode="numeric"
+            className="ml-1 w-20 border border-warm-200 rounded-lg px-2 py-1.5 text-sm"
+            aria-label="Groups"
+          />
+        </label>
         <input
-          value={costBps}
-          onChange={(event) => setCostBps(event.target.value)}
+          value={configDraft.cost_bps ?? ""}
+          onChange={(e) => setConfig({ cost_bps: e.target.value ? Number(e.target.value) : undefined })}
           placeholder="cost_bps"
           inputMode="decimal"
           className="w-28 border border-warm-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-warm-300"
         />
+        <label className="text-xs text-warm-500 flex items-center gap-1">
+          <input
+            type="checkbox"
+            checked={configDraft.neutralize?.includes("beta") ?? false}
+            onChange={(e) => {
+              const current = configDraft.neutralize ?? [];
+              setConfig({ neutralize: e.target.checked ? [...current, "beta"] : current.filter((d) => d !== "beta") });
+            }}
+            aria-label="Neutralize beta"
+          />
+          β
+        </label>
         <button
           type="button"
           disabled={!isAwaiting || isSubmitting}

@@ -92,6 +92,7 @@ def build_run_signal_backtest_skill(ctx: _RunContext, run) -> Skill:
             benchmark_symbol=benchmark_symbol,
             turnover_annual=backtest.metrics.get("turnover_annual"),
             mcp_calls=ctx.mcp_calls,
+            execution=execution_config.to_dict(),
         )
         ctx.review_report = review_report
         run.save_json("review_report.json", review_report.to_dict())
@@ -139,6 +140,7 @@ def build_fork_run_signal_backtest_skill(ctx: _RunContext, run) -> Skill:
             benchmark_returns=None,
             turnover_annual=backtest.metrics.get("turnover_annual"),
             mcp_calls=ctx.mcp_calls,
+            execution=execution_config.to_dict(),
         )
         ctx.review_report = review_report
         run.save_json("review_report.json", review_report.to_dict())

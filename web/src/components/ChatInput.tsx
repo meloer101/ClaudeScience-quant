@@ -36,7 +36,7 @@ export function ChatInput({ onSubmit, isRunning = false, onStop }: ChatInputProp
               void handleSubmit();
             }
           }}
-          placeholder="Ask anything — @ for artifacts, # for sessions, / for skills, ⌘K to search…"
+          placeholder="Describe the factor, universe, and review you want to run…"
           rows={1}
           className="flex-1 resize-none outline-none text-sm py-1 max-h-40 text-warm-900 placeholder:text-warm-400"
         />

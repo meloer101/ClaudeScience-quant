@@ -29,6 +29,7 @@ def test_backtest_captures_correct_sign_at_signal_transition():
     turns long one bar *before* a price jump (using only causally-available data)
     must show a gain at that jump, not a loss."""
     from quantbench.engine.vectorized_backtest import run_vectorized_backtest
+    from quantbench.engine.execution import ExecutionConfig
 
     n = 40
     close = pd.Series([100.0] * 24 + [120.0] * 16)  # jump happens between bar 23 and 24
@@ -40,7 +41,7 @@ def test_backtest_captures_correct_sign_at_signal_transition():
     # close, strictly before the price actually jumps between bar 23 and 24.
     raw_signal = pd.Series([0.5] * 23 + [-0.9] * 17)
 
-    result = run_vectorized_backtest(df, raw_signal, cost_bps=0)
+    result = run_vectorized_backtest(df, raw_signal, cost_bps=0, execution=ExecutionConfig(fill_price="close_t"))
     jump_return = result.returns.iloc[23]
     assert jump_return > 0, (
         f"expected a gain when a causally-valid long signal precedes a price jump, got {jump_return}"

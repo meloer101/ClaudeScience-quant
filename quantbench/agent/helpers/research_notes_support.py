@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from quantbench.agent.constants import CRYPTO_PERPETUAL_FUNDING_WARNING
+from quantbench.agent.constants import CRYPTO_PERPETUAL_FUNDING_COVERAGE_WARNING
 from quantbench.agent.run_context import _RunContext
 from quantbench.api import run_reader
 from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
@@ -41,9 +41,21 @@ def _data_slices_from_cache(cache_meta: dict[str, Any] | None) -> list[dict[str,
 
 
 def _append_crypto_perpetual_warning(ctx: _RunContext) -> list[str]:
-    if CRYPTO_PERPETUAL_FUNDING_WARNING not in ctx.warnings:
-        ctx.warnings.append(CRYPTO_PERPETUAL_FUNDING_WARNING)
-        return [CRYPTO_PERPETUAL_FUNDING_WARNING]
+    meta = ctx.funding_meta or {}
+    alignment = meta.get("alignment") if isinstance(meta, dict) else {}
+    failed = meta.get("failed") if isinstance(meta, dict) else {}
+    ratio = float((alignment or {}).get("coverage_ratio", 0.0) or 0.0)
+    missing_pairs = int((alignment or {}).get("missing_period_symbol_pairs", 0) or 0)
+    if ratio >= 0.98 and missing_pairs == 0 and not failed:
+        return []
+    warning = (
+        f"{CRYPTO_PERPETUAL_FUNDING_COVERAGE_WARNING} "
+        f"Aligned funding coverage={ratio:.1%}; missing period-symbol pairs={missing_pairs}; "
+        f"failed symbols={len(failed or {})}."
+    )
+    if warning not in ctx.warnings:
+        ctx.warnings.append(warning)
+        return [warning]
     return []
 
 

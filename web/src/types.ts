@@ -57,6 +57,19 @@ export interface ResearchSession {
   turns: SessionTurn[];
 }
 
+export interface StagingConfig {
+  start?: string;
+  end?: string;
+  timeframe?: string;
+  n_groups?: number;
+  cost_bps?: number;
+  execution?: { signal_time?: string; fill_price?: "open_t+1" | "close_t" | "close_t+1" };
+  liquidity_cost?: { enabled?: boolean; aum_usd?: number; participation_cap?: number };
+  borrow_cost?: { enabled?: boolean };
+  neutralize?: string[];
+  universe?: { name?: string; as_of_date?: string; point_in_time?: boolean; limit?: number | null };
+}
+
 export interface StagingArtifact {
   factor_spec?: {
     natural_language_definition?: string;
@@ -82,6 +95,7 @@ export interface StagingArtifact {
   };
   overrides?: Record<string, unknown>;
   staged_diff?: Record<string, unknown>;
+  config?: StagingConfig;
 }
 
 export interface ExperimentRecord {

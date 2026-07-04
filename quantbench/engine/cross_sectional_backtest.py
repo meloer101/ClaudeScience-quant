@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from quantbench.review.bootstrap import metrics_ci
+from quantbench.engine.funding import funding_cost_by_period
 from quantbench.engine.costs import LiquidityCostConfig, apply_liquidity_costs, capacity_curve
 from quantbench.engine.execution import ExecutionConfig, forward_returns_for_execution
 from quantbench.engine.metrics import (
@@ -43,6 +44,7 @@ class CrossSectionalBacktestResult:
     # this same matrix, so it was already available internally, just not
     # returned to callers.
     weights: pd.DataFrame
+    funding_coverage: dict[str, Any]
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +54,7 @@ class CrossSectionalBacktestResult:
             "execution": self.execution.to_dict(),
             "long_short_contribution": self.long_short_contribution,
             "capacity_curve": self.capacity_curve,
+            "funding_coverage": self.funding_coverage,
             "series": {
                 "timestamp": [str(item) for item in self.returns.index],
                 "long_short_returns": self.returns.fillna(0).round(10).tolist(),
@@ -162,7 +165,8 @@ def run_cross_sectional_backtest(
     target_long_short = long_short.copy()
     weights = _portfolio_weights(weighted, n_groups)
     turnover = weights.diff().abs().sum(axis=1).div(2).fillna(weights.abs().sum(axis=1))
-    funding_cost = _funding_cost(weights, funding_rates).reindex(long_short.index).fillna(0)
+    funding_series = funding_cost_by_period(weights, funding_rates)
+    funding_cost = funding_series.cost.reindex(long_short.index).fillna(0)
     borrow_cost = _borrow_cost(weights, borrow_rates).reindex(long_short.index).fillna(0)
     liquidity_cost = pd.Series(0.0, index=long_short.index)
     curve: list[dict[str, float]] = []
@@ -225,6 +229,7 @@ def run_cross_sectional_backtest(
         liquidity_cost=liquidity_cost.reindex(net_returns.index).fillna(0),
         borrow_cost=borrow_cost.reindex(net_returns.index).fillna(0),
         weights=weights,
+        funding_coverage=funding_series.coverage,
     )
 
 
@@ -324,20 +329,7 @@ def _portfolio_weights(weighted: pd.DataFrame, n_groups: int) -> pd.DataFrame:
 
 
 def _funding_cost(weights: pd.DataFrame, funding_rates: pd.DataFrame | None) -> pd.Series:
-    if weights.empty or funding_rates is None or funding_rates.empty:
-        return pd.Series(0.0, index=weights.index)
-    required = {"timestamp", "symbol", "funding_rate"}
-    if not required.issubset(funding_rates.columns):
-        raise ValueError("funding_rates must contain timestamp, symbol, and funding_rate columns")
-    rates = funding_rates.loc[:, ["timestamp", "symbol", "funding_rate"]].copy()
-    rates["timestamp"] = pd.to_datetime(rates["timestamp"], utc=True)
-    rates["funding_rate"] = pd.to_numeric(rates["funding_rate"], errors="coerce")
-    rate_matrix = (
-        rates.dropna(subset=["funding_rate"])
-        .pivot_table(index="timestamp", columns="symbol", values="funding_rate", aggfunc="sum", fill_value=0)
-        .reindex(index=weights.index, columns=weights.columns, fill_value=0)
-    )
-    return (weights * rate_matrix).sum(axis=1)
+    return funding_cost_by_period(weights, funding_rates).cost
 
 
 def _borrow_cost(weights: pd.DataFrame, borrow_rates: pd.DataFrame | None) -> pd.Series:

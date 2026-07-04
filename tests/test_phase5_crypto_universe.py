@@ -255,14 +255,14 @@ def test_cross_sectional_crypto_uses_btc_benchmark_and_writes_funding_warning(tm
     result = Coordinator(run_store=ArtifactStore(tmp_path / "runs"), llm=FakeLLMClient(script)).run("crypto cross section")
 
     assert benchmark_requests[-1]["symbol"] == "BTC/USDT"
-    assert any("do not model funding rate carry cost" in warning for warning in result.warnings)
+    assert any("funding coverage" in warning.lower() for warning in result.warnings)
 
     manifest = json.loads((result.run_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert any("do not model funding rate carry cost" in warning for warning in manifest["warnings"])
+    assert any("funding coverage" in warning.lower() for warning in manifest["warnings"])
     beta_findings = [finding for finding in manifest["review"]["findings"] if finding["check"] == "beta_exposure"]
     assert beta_findings[-1]["detail"]["benchmark_symbol"] == "BTC/USDT"
     note = (result.run_dir / "research_note.md").read_text(encoding="utf-8")
-    assert "do not model funding rate carry cost" in note
+    assert "funding coverage" in note.lower()
 
 
 def test_cross_sectional_equity_still_uses_spy_benchmark(tmp_path: Path, monkeypatch):

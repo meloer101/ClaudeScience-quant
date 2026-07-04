@@ -164,6 +164,13 @@ def ingest(source: str) -> Paper:
     return ingest_with_bytes(source)[0]
 
 
+def ingest_upload_with_bytes(filename: str, pdf_bytes: bytes) -> tuple[Paper, bytes]:
+    if not filename.lower().endswith(".pdf"):
+        raise ValueError("uploaded literature file must be a PDF")
+    paper = ingest_pdf_bytes(pdf_bytes, source=filename, source_kind="upload")
+    return paper, pdf_bytes
+
+
 def ingest_and_store(source: str, store) -> Paper:
     """Ingest and persist to a PaperStore (with raw PDF bytes). Single place that
     guarantees source.pdf is written for both local and arXiv papers."""
