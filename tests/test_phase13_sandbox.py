@@ -144,6 +144,49 @@ def test_run_signal_code_panel_matches_unsandboxed_groupby_execution():
     assert len(sandboxed) == len(panel)
 
 
+def test_run_signal_code_panel_does_not_deadlock_on_large_result():
+    """Regression: a factor panel larger than the OS pipe buffer (~64KB pickled)
+    used to deadlock. The child couldn't terminate until the parent drained its
+    result, but the parent was blocked in join() waiting for the child to exit -
+    so the run hung until the wall-clock backstop fired (~120s). Small test
+    panels fit under the buffer and hid this; every realistic multi-symbol /
+    multi-year cross-sectional backtest hit it. 40 symbols x ~2 years is well
+    over the buffer and must complete near-instantly, not near the timeout.
+
+    Uses a generous wall_timeout so a genuinely deadlocked implementation still
+    surfaces (it would raise SandboxError), but a healthy one returns in well
+    under a second."""
+    from quantbench.skills.codeexec import run_signal_code_panel
+    from quantbench.skills.sandbox import SandboxConfig
+
+    dates = pd.bdate_range("2021-01-01", periods=520)
+    frames = []
+    for i in range(40):
+        frames.append(
+            pd.DataFrame(
+                {
+                    "timestamp": dates,
+                    "symbol": f"S{i:02d}",
+                    "open": 100.0,
+                    "high": 100.0,
+                    "low": 100.0,
+                    "close": [100.0 + j * 0.1 for j in range(len(dates))],
+                    "volume": 1_000_000.0,
+                }
+            )
+        )
+    panel = pd.concat(frames, ignore_index=True)
+    assert len(panel) > 20_000  # comfortably over the ~64KB pipe buffer once pickled
+
+    code = "def compute(df):\n    return df['close'].pct_change().fillna(0.0)\n"
+    started = time.perf_counter()
+    result = run_signal_code_panel(code, panel, sandbox=SandboxConfig(cpu_seconds=60, wall_timeout_s=30.0))
+    elapsed = time.perf_counter() - started
+
+    assert len(result) == len(panel)
+    assert elapsed < 15.0  # a deadlocked impl would only escape at the 30s wall backstop
+
+
 def test_cross_sectional_backtest_accepts_precomputed_factor_values():
     from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
     from quantbench.skills.codeexec import _execute_signal_code_panel, load_signal_function

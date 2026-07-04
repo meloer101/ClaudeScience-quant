@@ -90,6 +90,29 @@ def test_run_from_paper_config_carries_literature_source(tmp_path, monkeypatch):
     assert config["literature_source"]["paper_id"] == paper.paper_id
 
 
+def test_comparison_maps_cross_sectional_metric_names():
+    """The cross-sectional engine reports rank_ic_mean / annual_return; the
+    comparison must line those up against the paper's reported sharpe /
+    annual_return / rank_ic rather than showing None."""
+    from quantbench.literature.agent import FactorExtraction
+    from quantbench.literature.reproduction import build_reproduction_comparison
+
+    extraction = FactorExtraction(
+        factor_name="mom",
+        economic_hypothesis="h",
+        formula="f",
+        compute_spec="s",
+        reported_results={"sharpe": 0.92, "annual_return": 11.3, "rank_ic": 0.041},
+    )
+    metrics = {"sharpe": -0.24, "annual_return": -0.11, "rank_ic_mean": 0.022, "ic_mean": 0.005}
+    rows = {row["metric"]: row for row in build_reproduction_comparison(extraction, metrics)["rows"]}
+
+    assert rows["sharpe"]["reproduced"] == -0.24
+    assert rows["annual_return"]["reproduced"] == -0.11
+    assert rows["rank_ic"]["reproduced"] == 0.022  # rank_ic_mean preferred over ic_mean
+    assert rows["rank_ic"]["delta"] is not None
+
+
 def test_library_can_filter_by_literature_source(tmp_path, monkeypatch):
     result, paper = _run(tmp_path, monkeypatch)
     # Point the library reader at this test's runs dir.

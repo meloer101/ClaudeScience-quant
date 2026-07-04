@@ -10,7 +10,9 @@ from quantbench.literature.agent import FactorExtraction
 _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "sharpe": ("sharpe",),
     "annual_return": ("annual_return", "annualized_return", "cagr"),
-    "rank_ic": ("ic", "rank_ic", "mean_ic"),
+    # Cross-sectional engine reports rank_ic_mean / ic_mean; single-symbol paths
+    # may report a bare ic. Prefer the rank IC, fall back to plain IC.
+    "rank_ic": ("rank_ic_mean", "rank_ic", "ic_mean", "ic", "mean_ic"),
 }
 
 _LABELS = {

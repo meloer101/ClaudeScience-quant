@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
+import queue as queue_mod
 import signal
 import tempfile
 import time
@@ -74,15 +75,45 @@ def run_in_sandbox(
 
     started = time.perf_counter()
     process.start()
-    process.join(config.wall_timeout_s)
-    wall_seconds = time.perf_counter() - started
 
-    if process.is_alive():
+    # Drain the queue *while* the child runs, rather than join()-then-get().
+    # A child that puts a result larger than the OS pipe buffer (~64KB) cannot
+    # terminate until the parent reads it - so joining first would deadlock the
+    # parent (blocked in join) against the child (blocked flushing its result).
+    # This bit a real cross-sectional backtest: small test panels fit under the
+    # buffer, but a full multi-symbol / multi-year factor panel does not, and
+    # every such run hung until the wall-clock backstop fired. get() with a
+    # timeout reads the result the moment it lands, so the child can exit.
+    result_payload = None
+    got_result = False
+    deadline = started + config.wall_timeout_s
+    while True:
+        remaining = deadline - time.perf_counter()
+        if remaining <= 0:
+            break
+        try:
+            result_payload = result_queue.get(timeout=min(0.2, remaining))
+            got_result = True
+            break
+        except queue_mod.Empty:
+            if not process.is_alive():
+                # Child exited without a result on the queue yet; one last
+                # non-blocking drain in case it landed as the child exited.
+                try:
+                    result_payload = result_queue.get_nowait()
+                    got_result = True
+                except queue_mod.Empty:
+                    pass
+                break
+
+    if not got_result and process.is_alive():
+        # True wall-clock timeout: still running, still no result.
         process.terminate()
         process.join(2.0)
         if process.is_alive():
             process.kill()
             process.join()
+        wall_seconds = time.perf_counter() - started
         _append_usage(
             usage_sink,
             SandboxUsage(
@@ -97,7 +128,13 @@ def run_in_sandbox(
         )
         raise SandboxError(f"sandbox: wall-clock timeout exceeded ({config.wall_timeout_s}s)")
 
-    if result_queue.empty():
+    process.join(2.0)
+    if process.is_alive():
+        process.kill()
+        process.join()
+    wall_seconds = time.perf_counter() - started
+
+    if not got_result:
         _append_usage(
             usage_sink,
             SandboxUsage(
@@ -115,7 +152,7 @@ def run_in_sandbox(
             f"(CPU {config.cpu_seconds}s / memory {config.mem_mb}MB)"
         )
 
-    status, payload, child_usage = result_queue.get()
+    status, payload, child_usage = result_payload
     _append_usage(
         usage_sink,
         SandboxUsage(
