@@ -63,5 +63,12 @@ def test_root_internal_docs_moved_to_docs_dev():
 
     root_docs = [path.name for path in Path(".").glob("PHASE*.md")]
 
+    # Phase implementation logs and status snapshots were pruned entirely
+    # ahead of V0 (superseded by shipped code/tests and LAUNCH_READINESS.md),
+    # not just relocated - so docs/dev/ should have neither PHASE*.md nor
+    # PROJECT_STATUS.md, and root should never regain any PHASE*.md either.
     assert root_docs == []
-    assert Path("docs/dev/PHASE13.md").exists()
+    assert list(Path("docs/dev").glob("PHASE*.md")) == []
+    assert not Path("docs/dev/PROJECT_STATUS.md").exists()
+    assert Path("docs/dev/VISION.md").exists()
+    assert Path("docs/dev/GAP_ANALYSIS.md").exists()
