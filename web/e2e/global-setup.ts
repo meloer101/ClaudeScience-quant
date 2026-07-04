@@ -9,13 +9,14 @@ import {
   SEED_RUN_WARNING,
 } from "./fixtures";
 
-// Writes a fake completed run straight into the real runs/ directory (the
-// same one quantbench.config.RUNS_DIR points at) so the E2E backend and
-// frontend processes - real processes, not a TestClient - have something to
-// read. runs/ is gitignored, so this never touches version control; the
-// matching global-teardown removes it again after the suite finishes.
+// Writes a fake completed run into the same QUANTBENCH_HOME/runs directory
+// that the E2E FastAPI process reads from. The matching global-teardown
+// removes it again after the suite finishes.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const RUNS_DIR = path.resolve(__dirname, "../../runs");
+const QUANTBENCH_HOME = process.env.QUANTBENCH_HOME
+  ? path.resolve(process.env.QUANTBENCH_HOME)
+  : path.resolve(__dirname, "../../.playwright-quantbench-home");
+const RUNS_DIR = path.join(QUANTBENCH_HOME, "runs");
 
 export default function globalSetup() {
   const runDir = path.join(RUNS_DIR, SEED_RUN_ID);

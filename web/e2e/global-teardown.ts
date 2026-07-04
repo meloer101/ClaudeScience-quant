@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { SEED_RUN_ID } from "./fixtures";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const RUNS_DIR = path.resolve(__dirname, "../../runs");
+const QUANTBENCH_HOME = process.env.QUANTBENCH_HOME
+  ? path.resolve(process.env.QUANTBENCH_HOME)
+  : path.resolve(__dirname, "../../.playwright-quantbench-home");
+const RUNS_DIR = path.join(QUANTBENCH_HOME, "runs");
 
 export default function globalTeardown() {
   rmSync(path.join(RUNS_DIR, SEED_RUN_ID), { recursive: true, force: true });

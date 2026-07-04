@@ -1,4 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
+
+const E2E_API_TOKEN = "playwright-test-token";
+const E2E_QUANTBENCH_HOME =
+  process.env.QUANTBENCH_E2E_HOME ?? path.resolve(process.cwd(), "..", ".playwright-quantbench-home");
+process.env.QUANTBENCH_HOME = E2E_QUANTBENCH_HOME;
 
 // End-to-end tests drive the real FastAPI backend and the real Vite dev
 // server together (not mocks) - see e2e/global-setup.ts for how a fixture
@@ -19,12 +25,22 @@ export default defineConfig({
     {
       command: "uv run uvicorn quantbench.api.server:app --port 8000",
       cwd: "..",
-      url: "http://localhost:8000/api/runs",
+      env: {
+        ...process.env,
+        QUANTBENCH_HOME: E2E_QUANTBENCH_HOME,
+        QUANTBENCH_API_TOKEN: E2E_API_TOKEN,
+      },
+      url: `http://localhost:8000/api/runs?token=${E2E_API_TOKEN}`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
     {
       command: "npm run dev",
+      env: {
+        ...process.env,
+        VITE_QUANTBENCH_API_BASE: "http://localhost:8000/api",
+        VITE_QUANTBENCH_API_TOKEN: E2E_API_TOKEN,
+      },
       url: "http://localhost:5173",
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,

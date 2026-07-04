@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import os
-import queue as queue_mod
 import signal
 import tempfile
 import time
 from dataclasses import dataclass
+from multiprocessing.connection import Connection
 from typing import Any, Callable
 
 from quantbench.config import (
@@ -70,106 +70,112 @@ def run_in_sandbox(
     unchanged, so callers see the same exception types as the unsandboxed
     path."""
     config = config or _DEFAULT_CONFIG
-    result_queue: mp.Queue = _CONTEXT.Queue()
-    process = _CONTEXT.Process(target=_run_in_child, args=(func, args, config, result_queue))
+    parent_conn, child_conn = _CONTEXT.Pipe(duplex=False)
+    process = _CONTEXT.Process(target=_run_in_child, args=(func, args, config, child_conn))
 
     started = time.perf_counter()
     process.start()
+    child_conn.close()
 
-    # Drain the queue *while* the child runs, rather than join()-then-get().
-    # A child that puts a result larger than the OS pipe buffer (~64KB) cannot
-    # terminate until the parent reads it - so joining first would deadlock the
-    # parent (blocked in join) against the child (blocked flushing its result).
-    # This bit a real cross-sectional backtest: small test panels fit under the
-    # buffer, but a full multi-symbol / multi-year factor panel does not, and
-    # every such run hung until the wall-clock backstop fired. get() with a
-    # timeout reads the result the moment it lands, so the child can exit.
-    result_payload = None
-    got_result = False
-    deadline = started + config.wall_timeout_s
-    while True:
-        remaining = deadline - time.perf_counter()
-        if remaining <= 0:
-            break
-        try:
-            result_payload = result_queue.get(timeout=min(0.2, remaining))
-            got_result = True
-            break
-        except queue_mod.Empty:
-            if not process.is_alive():
-                # Child exited without a result on the queue yet; one last
-                # non-blocking drain in case it landed as the child exited.
+    try:
+        # Drain the pipe *while* the child runs, rather than join()-then-recv().
+        # A child that sends a result larger than the OS pipe buffer (~64KB)
+        # cannot terminate until the parent reads it - so joining first would
+        # deadlock the parent (blocked in join) against the child (blocked
+        # flushing its result). A Pipe is used instead of multiprocessing.Queue:
+        # Queue starts a feeder thread in the child on put(), which can fail
+        # after tight RLIMIT_AS memory caps are applied in CI.
+        result_payload = None
+        got_result = False
+        deadline = started + config.wall_timeout_s
+        while True:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                break
+            if parent_conn.poll(min(0.2, remaining)):
                 try:
-                    result_payload = result_queue.get_nowait()
+                    result_payload = parent_conn.recv()
                     got_result = True
-                except queue_mod.Empty:
+                except EOFError:
                     pass
                 break
+            if not process.is_alive():
+                # Child exited without a result on the pipe yet; one last
+                # non-blocking drain in case it landed as the child exited.
+                if parent_conn.poll():
+                    try:
+                        result_payload = parent_conn.recv()
+                        got_result = True
+                    except EOFError:
+                        pass
+                break
 
-    if not got_result and process.is_alive():
-        # True wall-clock timeout: still running, still no result.
-        process.terminate()
+        if not got_result and process.is_alive():
+            # True wall-clock timeout: still running, still no result.
+            process.terminate()
+            process.join(2.0)
+            if process.is_alive():
+                process.kill()
+                process.join()
+            wall_seconds = time.perf_counter() - started
+            _append_usage(
+                usage_sink,
+                SandboxUsage(
+                    wall_seconds=round(wall_seconds, 6),
+                    exitcode=process.exitcode,
+                    max_rss_bytes=0,
+                    limits=_limits_dict(config),
+                    unsupported_limits=[],
+                    wall_timeout_hit=True,
+                    cpu_limit_hit=_cpu_limit_hit(process.exitcode),
+                ),
+            )
+            raise SandboxError(f"sandbox: wall-clock timeout exceeded ({config.wall_timeout_s}s)")
+
         process.join(2.0)
         if process.is_alive():
             process.kill()
             process.join()
         wall_seconds = time.perf_counter() - started
+
+        if not got_result:
+            _append_usage(
+                usage_sink,
+                SandboxUsage(
+                    wall_seconds=round(wall_seconds, 6),
+                    exitcode=process.exitcode,
+                    max_rss_bytes=0,
+                    limits=_limits_dict(config),
+                    unsupported_limits=[],
+                    cpu_limit_hit=_cpu_limit_hit(process.exitcode),
+                ),
+            )
+            raise SandboxError(
+                f"sandbox: child process terminated abnormally (exit code {process.exitcode}) without "
+                "reporting a result - likely killed by the OS for exceeding a resource limit "
+                f"(CPU {config.cpu_seconds}s / memory {config.mem_mb}MB)"
+            )
+
+        status, payload, child_usage = result_payload
         _append_usage(
             usage_sink,
             SandboxUsage(
                 wall_seconds=round(wall_seconds, 6),
                 exitcode=process.exitcode,
-                max_rss_bytes=0,
+                max_rss_bytes=child_usage.get("max_rss_bytes", 0),
                 limits=_limits_dict(config),
-                unsupported_limits=[],
-                wall_timeout_hit=True,
+                unsupported_limits=child_usage.get("unsupported_limits", []),
                 cpu_limit_hit=_cpu_limit_hit(process.exitcode),
             ),
         )
-        raise SandboxError(f"sandbox: wall-clock timeout exceeded ({config.wall_timeout_s}s)")
-
-    process.join(2.0)
-    if process.is_alive():
-        process.kill()
-        process.join()
-    wall_seconds = time.perf_counter() - started
-
-    if not got_result:
-        _append_usage(
-            usage_sink,
-            SandboxUsage(
-                wall_seconds=round(wall_seconds, 6),
-                exitcode=process.exitcode,
-                max_rss_bytes=0,
-                limits=_limits_dict(config),
-                unsupported_limits=[],
-                cpu_limit_hit=_cpu_limit_hit(process.exitcode),
-            ),
-        )
-        raise SandboxError(
-            f"sandbox: child process terminated abnormally (exit code {process.exitcode}) without "
-            "reporting a result - likely killed by the OS for exceeding a resource limit "
-            f"(CPU {config.cpu_seconds}s / memory {config.mem_mb}MB)"
-        )
-
-    status, payload, child_usage = result_payload
-    _append_usage(
-        usage_sink,
-        SandboxUsage(
-            wall_seconds=round(wall_seconds, 6),
-            exitcode=process.exitcode,
-            max_rss_bytes=child_usage.get("max_rss_bytes", 0),
-            limits=_limits_dict(config),
-            unsupported_limits=child_usage.get("unsupported_limits", []),
-            cpu_limit_hit=_cpu_limit_hit(process.exitcode),
-        ),
-    )
-    if status == "error":
-        raise SandboxError(payload)
-    if status == "exception":
-        exc_type, message = payload
-        raise exc_type(message)
-    return payload
+        if status == "error":
+            raise SandboxError(payload)
+        if status == "exception":
+            exc_type, message = payload
+            raise exc_type(message)
+        return payload
+    finally:
+        parent_conn.close()
 
 
 def _apply_rlimits(config: SandboxConfig) -> list[str]:
@@ -195,10 +201,10 @@ def _apply_rlimits(config: SandboxConfig) -> list[str]:
     return unsupported
 
 
-def _run_in_child(func: Callable[..., Any], args: tuple, config: SandboxConfig, result_queue: mp.Queue) -> None:
+def _run_in_child(func: Callable[..., Any], args: tuple, config: SandboxConfig, result_conn: Connection) -> None:
     """Runs entirely inside the spawned child process. Never raises back into
     multiprocessing's process bootstrap - every failure mode is caught and
-    reported through result_queue instead, since an uncaught exception here
+    reported through result_conn instead, since an uncaught exception here
     would just look like an unexplained nonzero exit code to the parent."""
     unsupported_limits = _apply_rlimits(config)
 
@@ -211,16 +217,24 @@ def _run_in_child(func: Callable[..., Any], args: tuple, config: SandboxConfig, 
             os.chdir(tmpdir)
             result = func(*args)
     except MemoryError:
-        result_queue.put(("error", "sandbox: memory limit exceeded", _child_usage(unsupported_limits)))
+        _send_child_result(result_conn, ("error", "sandbox: memory limit exceeded", _child_usage(unsupported_limits)))
+        result_conn.close()
         return
     except Exception as exc:  # noqa: BLE001 - forward the original exception type/message, not a crash
-        result_queue.put(("exception", (type(exc), str(exc)), _child_usage(unsupported_limits)))
+        _send_child_result(result_conn, ("exception", (type(exc), str(exc)), _child_usage(unsupported_limits)))
+        result_conn.close()
         return
 
     try:
-        result_queue.put(("ok", result, _child_usage(unsupported_limits)))
+        _send_child_result(result_conn, ("ok", result, _child_usage(unsupported_limits)))
     except Exception as exc:  # noqa: BLE001 - e.g. an unpicklable result; report it rather than hang the parent
-        result_queue.put(("error", f"sandbox: failed to serialize result: {exc}", _child_usage(unsupported_limits)))
+        _send_child_result(result_conn, ("error", f"sandbox: failed to serialize result: {exc}", _child_usage(unsupported_limits)))
+    finally:
+        result_conn.close()
+
+
+def _send_child_result(result_conn: Connection, payload: tuple[str, Any, dict[str, Any]]) -> None:
+    result_conn.send(payload)
 
 
 def _limits_dict(config: SandboxConfig) -> dict[str, int | float]:
