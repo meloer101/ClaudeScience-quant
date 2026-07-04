@@ -36,6 +36,30 @@ def test_run_subagent_strips_markdown_fence():
     assert result == payload
 
 
+def test_run_subagent_extracts_json_after_prose_reasoning():
+    """Real DeepSeek behavior with tool use: prose reasoning, then a fenced
+    ```json block. re.fullmatch on the whole message would miss it - the parser
+    must find the fenced block despite the leading prose."""
+    payload = {"verdict": "PROMISING", "critique": "ok"}
+    content = (
+        "Let me think about this. The evidence points one way.\n"
+        "Now I'll construct the JSON.\n\n"
+        f"```json\n{json.dumps(payload)}\n```"
+    )
+    llm = FakeLLMClient([("text", content)])
+
+    assert run_subagent(llm, _agent(), {}) == payload
+
+
+def test_run_subagent_extracts_bare_object_embedded_in_prose():
+    """No code fence at all - a bare {...} object surrounded by prose."""
+    payload = {"verdict": "WEAK", "note": "has a } brace and \"quoted {\" string"}
+    content = f'Here is my answer: {json.dumps(payload)} - let me know if you need more.'
+    llm = FakeLLMClient([("text", content)])
+
+    assert run_subagent(llm, _agent(), {}) == payload
+
+
 def test_run_subagent_dispatches_tool_calls_before_final_answer():
     registry = SkillRegistry()
     calls = []

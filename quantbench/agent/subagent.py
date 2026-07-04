@@ -74,11 +74,59 @@ def run_subagent(
 
 
 def _parse_json(content: str) -> dict[str, Any]:
+    """Extract a JSON object from a sub-agent's final message. Models don't
+    always return pure JSON: some (e.g. DeepSeek with tool use) emit prose
+    reasoning followed by a ```json fenced block, or a bare object embedded in
+    surrounding text. We try, in order: the whole string; a fenced block found
+    anywhere; then the first balanced {...} object. Each candidate is only
+    tried after the previous one fails, so a well-behaved pure-JSON response
+    (the Critic's usual output) parses on the first attempt exactly as before."""
     text = content.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL)
-    if fenced:
-        text = fenced.group(1)
-    payload = json.loads(text)
-    if not isinstance(payload, dict):
-        raise ValueError("sub-agent response must be a JSON object")
-    return payload
+    for candidate in _json_candidates(text):
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            raise ValueError("sub-agent response must be a JSON object")
+        return payload
+    raise json.JSONDecodeError("no JSON object found in sub-agent response", text or "", 0)
+
+
+def _json_candidates(text: str):
+    yield text
+    # Fenced block anywhere in the message (search, not fullmatch, so leading
+    # prose like "Now I'll construct the JSON:" doesn't defeat it).
+    for match in re.finditer(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL):
+        yield match.group(1)
+    # First balanced top-level {...} object, respecting strings and escapes.
+    balanced = _first_balanced_object(text)
+    if balanced is not None:
+        yield balanced
+
+
+def _first_balanced_object(text: str) -> str | None:
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(text)):
+            char = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+            elif char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : index + 1]
+        start = text.find("{", start + 1)
+    return None
