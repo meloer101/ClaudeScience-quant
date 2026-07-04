@@ -119,6 +119,7 @@ def run_review(
     borrow_cost_sensitivity: dict[str, Any] | None = None,
     ic_series: pd.Series | None = None,
     ic_significance: ICSignificance | dict[str, Any] | None = None,
+    mcp_calls: list[dict[str, Any]] | None = None,
 ) -> ReviewReport:
     findings: list[ReviewFinding] = []
     findings.extend(_safe("lookahead", lambda: _lookahead_findings(code)))
@@ -149,6 +150,8 @@ def run_review(
         findings.append(_short_dependency_finding(long_short_contribution))
     if borrow_cost_sensitivity is not None:
         findings.append(_borrow_cost_finding(borrow_cost_sensitivity))
+    if mcp_calls:
+        findings.append(_external_data_finding(mcp_calls))
     verdict, reason = determine_verdict(findings)
     return ReviewReport(findings=findings, verdict=verdict, verdict_reason=reason)
 
@@ -327,6 +330,22 @@ def _borrow_cost_finding(detail: dict[str, Any]) -> ReviewFinding:
     severity = "warning" if decay > 0.5 else "pass"
     message = f"Borrow-adjusted Sharpe changed from {float(before):.3f} to {float(after):.3f} (decay {decay:.3f})."
     return ReviewFinding("borrow_cost_sensitivity", severity, message, detail)
+
+
+def _external_data_finding(mcp_calls: list[dict[str, Any]]) -> ReviewFinding:
+    sources = sorted(
+        {
+            f"{call.get('server', 'unknown')}/{call.get('tool', 'unknown')}"
+            for call in mcp_calls
+            if isinstance(call, dict)
+        }
+    )
+    return ReviewFinding(
+        "external_data_unverified",
+        "info",
+        "Run used unverified external MCP data tools: " + ", ".join(sources),
+        {"sources": sources, "call_count": len(mcp_calls)},
+    )
 
 
 def _oos_finding(result: OOSResult) -> ReviewFinding:

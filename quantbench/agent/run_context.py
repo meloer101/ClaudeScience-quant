@@ -59,3 +59,4 @@ class _RunContext:
         self.screened = False
         self.delegations: list[dict[str, Any]] = []
         self.sandbox_usage: list[Any] = []
+        self.mcp_calls: list[dict[str, Any]] = []

@@ -10,6 +10,7 @@ DATA_CACHE_DIR = PROJECT_ROOT / "data_cache"
 RUNS_DIR = PROJECT_ROOT / "runs"
 FACTORS_DIR = PROJECT_ROOT / "factors"
 SKILL_DOCS_DIR = PROJECT_ROOT / "skills_docs"
+MCP_SERVERS_CONFIG = PROJECT_ROOT / "mcp_servers.json"
 DEFAULT_COST_BPS = 5.0
 DEFAULT_MODEL = "deepseek/deepseek-chat"
 MAX_STEPS = 12

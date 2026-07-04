@@ -219,6 +219,7 @@ def _run_screen_candidate(
             else None,
             ic_series=backtest.ic_series,
             ic_significance=backtest.ic_significance,
+            mcp_calls=ctx.mcp_calls,
         )
         ctx.review_report = review_report
         child.save_json("review_report.json", review_report.to_dict())
@@ -319,6 +320,7 @@ def _run_screen_candidate(
             data_slices=_data_slices_from_cache(cache_meta),
             delegations=ctx.delegations,
             sandbox_usage=[asdict(item) for item in ctx.sandbox_usage],
+            mcp_calls=ctx.mcp_calls,
         )
         item = _screen_item(candidate["name"], child.run_id, "completed", backtest.metrics, review_report, ctx.critic_report)
         item["_returns"] = backtest.returns

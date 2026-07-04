@@ -224,6 +224,7 @@ def _run_portfolio_optimization(
         critic=ctx.critic_report.to_dict() if ctx.critic_report else None,
         parent_run_id=parent_run_id,
         delegations=ctx.delegations,
+        mcp_calls=ctx.mcp_calls,
     )
 
     return {

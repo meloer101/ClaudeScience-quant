@@ -1,0 +1,336 @@
+from __future__ import annotations
+
+import atexit
+import asyncio
+import hashlib
+import json
+import threading
+import time
+import warnings
+from concurrent.futures import TimeoutError
+from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from quantbench.skills.registry import Skill
+
+
+@dataclass(frozen=True)
+class StdioTransportConfig:
+    command: str
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class MCPServerConfig:
+    name: str
+    transport: StdioTransportConfig
+    enabled_tools: list[str] = field(default_factory=list)
+    allow_write: bool = False
+
+
+@dataclass
+class _ServerConnection:
+    session: Any
+    tools: list[Any]
+    stack: AsyncExitStack
+
+
+SIDE_EFFECT_TOKENS = (
+    "create",
+    "delete",
+    "write",
+    "order",
+    "send",
+    "execute",
+    "update",
+    "insert",
+    "remove",
+    "patch",
+    "post",
+    "put",
+    "trade",
+    "buy",
+    "sell",
+)
+
+
+def load_mcp_config(path: str | Path) -> list[MCPServerConfig]:
+    config_path = Path(path)
+    if not config_path.exists():
+        return []
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        warnings.warn(f"Skipping MCP config {config_path}: {type(exc).__name__}: {exc}", stacklevel=2)
+        return []
+
+    servers = payload.get("servers", []) if isinstance(payload, dict) else []
+    if not isinstance(servers, list):
+        warnings.warn("Skipping MCP config: `servers` must be a list.", stacklevel=2)
+        return []
+
+    parsed: list[MCPServerConfig] = []
+    seen: set[str] = set()
+    for index, raw in enumerate(servers):
+        try:
+            server = _parse_server_config(raw)
+        except ValueError as exc:
+            label = raw.get("name", f"#{index}") if isinstance(raw, dict) else f"#{index}"
+            warnings.warn(f"Skipping MCP server {label}: {exc}", stacklevel=2)
+            continue
+        if server.name in seen:
+            warnings.warn(f"Skipping MCP server {server.name}: duplicate name.", stacklevel=2)
+            continue
+        seen.add(server.name)
+        parsed.append(server)
+    return parsed
+
+
+def is_readonly_tool(tool: Any) -> bool:
+    name = str(getattr(tool, "name", "") or "").lower()
+    description = str(getattr(tool, "description", "") or "").lower()
+    haystack = f"{name} {description}"
+    return not any(token in haystack for token in SIDE_EFFECT_TOKENS)
+
+
+class MCPClientManager:
+    def __init__(
+        self,
+        servers: list[MCPServerConfig],
+        ctx: Any,
+        *,
+        call_timeout_s: float = 30.0,
+    ) -> None:
+        self.servers = servers
+        self.ctx = ctx
+        self.call_timeout_s = call_timeout_s
+        self._loop = asyncio.new_event_loop()
+        self._ready = threading.Event()
+        self._closed = False
+        self._connections: dict[str, _ServerConnection] = {}
+        self._thread = threading.Thread(target=self._run_loop, name="quantbench-mcp-client", daemon=True)
+        self._thread.start()
+        self._ready.wait(timeout=5.0)
+        atexit.register(self.close)
+
+    @classmethod
+    def from_config_path(cls, path: str | Path, ctx: Any, *, call_timeout_s: float = 30.0) -> "MCPClientManager":
+        return cls(load_mcp_config(path), ctx, call_timeout_s=call_timeout_s)
+
+    def build_skills(self) -> list[Skill]:
+        skills: list[Skill] = []
+        for server in self.servers:
+            if server.allow_write:
+                warnings.warn(
+                    f"Skipping MCP server {server.name}: allow_write=true is not supported in this phase.",
+                    stacklevel=2,
+                )
+                continue
+            if not server.enabled_tools:
+                continue
+            connection = self._connect(server)
+            if connection is None:
+                continue
+            enabled = set(server.enabled_tools)
+            for tool in connection.tools:
+                tool_name = str(getattr(tool, "name", ""))
+                if tool_name not in enabled:
+                    continue
+                if not is_readonly_tool(tool):
+                    warnings.warn(
+                        f"Skipping MCP tool {server.name}/{tool_name}: name or description indicates side effects.",
+                        stacklevel=2,
+                    )
+                    continue
+                skills.append(self._skill_for_tool(server, tool))
+        return skills
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            future = asyncio.run_coroutine_threadsafe(self._close_async(), self._loop)
+            future.result(timeout=5.0)
+        except Exception:
+            pass
+        self._loop.call_soon_threadsafe(self._loop.stop)
+        self._thread.join(timeout=5.0)
+
+    def _run_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._ready.set()
+        self._loop.run_forever()
+        self._loop.close()
+
+    def _connect(self, server: MCPServerConfig) -> _ServerConnection | None:
+        if server.name in self._connections:
+            return self._connections[server.name]
+        try:
+            future = asyncio.run_coroutine_threadsafe(self._connect_async(server), self._loop)
+            connection = future.result(timeout=self.call_timeout_s)
+        except Exception as exc:
+            warnings.warn(f"Skipping MCP server {server.name}: {type(exc).__name__}: {exc}", stacklevel=2)
+            return None
+        self._connections[server.name] = connection
+        return connection
+
+    async def _connect_async(self, server: MCPServerConfig) -> _ServerConnection:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        stack = AsyncExitStack()
+        params = StdioServerParameters(
+            command=server.transport.command,
+            args=server.transport.args,
+            env=server.transport.env or None,
+        )
+        read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
+        session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+        await session.initialize()
+        result = await session.list_tools()
+        return _ServerConnection(session=session, tools=list(getattr(result, "tools", []) or []), stack=stack)
+
+    def _skill_for_tool(self, server: MCPServerConfig, tool: Any) -> Skill:
+        tool_name = str(getattr(tool, "name", ""))
+        description = str(getattr(tool, "description", "") or "")
+        parameters = getattr(tool, "inputSchema", None) or getattr(tool, "input_schema", None) or {"type": "object"}
+
+        def _call_tool(**kwargs: Any) -> Any:
+            started = time.perf_counter()
+            error: str | None = None
+            normalized: Any
+            try:
+                normalized = self.call_tool(server.name, tool_name, kwargs)
+                if isinstance(normalized, dict) and "error" in normalized:
+                    error = str(normalized["error"])
+                return normalized
+            except Exception as exc:  # noqa: BLE001 - external tool errors stay structured
+                error = f"{type(exc).__name__}: {exc}"
+                normalized = {"error": error}
+                return normalized
+            finally:
+                duration = round(time.perf_counter() - started, 3)
+                self._record_call(server.name, tool_name, kwargs, normalized, duration, error)
+
+        return Skill(
+            name=f"mcp_{server.name}_{tool_name}",
+            description=f"[external:{server.name}] {description}".strip(),
+            parameters=parameters,
+            fn=_call_tool,
+        )
+
+    def call_tool(self, server_name: str, tool_name: str, args: dict[str, Any]) -> Any:
+        if server_name not in self._connections:
+            raise RuntimeError(f"MCP server is not connected: {server_name}")
+        session = self._connections[server_name].session
+        future = asyncio.run_coroutine_threadsafe(session.call_tool(tool_name, args), self._loop)
+        try:
+            result = future.result(timeout=self.call_timeout_s)
+        except TimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(f"MCP tool {server_name}/{tool_name} timed out after {self.call_timeout_s:.1f}s") from exc
+        return _normalize_call_result(result)
+
+    def _record_call(
+        self,
+        server: str,
+        tool: str,
+        args: dict[str, Any],
+        result: Any,
+        duration_s: float,
+        error: str | None,
+    ) -> None:
+        payload = json.dumps(_jsonable(result), ensure_ascii=False, sort_keys=True)
+        record = {
+            "server": server,
+            "tool": tool,
+            "args": _jsonable(args),
+            "result_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+            "duration_s": duration_s,
+        }
+        if error:
+            record["error"] = error
+        self.ctx.mcp_calls.append(record)
+
+    async def _close_async(self) -> None:
+        for connection in list(self._connections.values()):
+            await connection.stack.aclose()
+        self._connections.clear()
+
+
+def _parse_server_config(raw: Any) -> MCPServerConfig:
+    if not isinstance(raw, dict):
+        raise ValueError("server entry must be an object")
+    name = raw.get("name")
+    if not isinstance(name, str) or not name:
+        raise ValueError("missing non-empty name")
+    transport = raw.get("transport")
+    if not isinstance(transport, dict):
+        raise ValueError("missing transport")
+    if transport.get("type") != "stdio":
+        raise ValueError("only stdio transport is supported")
+    command = transport.get("command")
+    if not isinstance(command, str) or not command:
+        raise ValueError("transport.command must be non-empty")
+    args = transport.get("args", [])
+    if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+        raise ValueError("transport.args must be a list of strings")
+    env = transport.get("env", {})
+    if not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
+        raise ValueError("transport.env must be an object of strings")
+    enabled_tools = raw.get("enabled_tools", [])
+    if not isinstance(enabled_tools, list) or not all(isinstance(item, str) for item in enabled_tools):
+        raise ValueError("enabled_tools must be a list of strings")
+    allow_write = raw.get("allow_write", False)
+    if not isinstance(allow_write, bool):
+        raise ValueError("allow_write must be a boolean")
+    return MCPServerConfig(
+        name=name,
+        transport=StdioTransportConfig(command=command, args=list(args), env=dict(env)),
+        enabled_tools=list(enabled_tools),
+        allow_write=allow_write,
+    )
+
+
+def _normalize_call_result(result: Any) -> Any:
+    if bool(getattr(result, "isError", False)):
+        return {"error": _content_to_text(getattr(result, "content", []) or [])}
+    structured = getattr(result, "structuredContent", None) or getattr(result, "structured_content", None)
+    if structured is not None:
+        return _jsonable(structured)
+    content = list(getattr(result, "content", []) or [])
+    if not content:
+        return None
+    if not all(str(getattr(block, "type", "")) == "text" and hasattr(block, "text") for block in content):
+        return {"error": "unsupported MCP result content type"}
+    text = "\n".join(str(block.text) for block in content)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
+def _content_to_text(content: list[Any]) -> str:
+    parts = []
+    for block in content:
+        if hasattr(block, "text"):
+            parts.append(str(block.text))
+        else:
+            parts.append(str(block))
+    return "\n".join(parts)
+
+
+def _jsonable(value: Any) -> Any:
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        if isinstance(value, dict):
+            return {str(key): _jsonable(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_jsonable(item) for item in value]
+        return str(value)

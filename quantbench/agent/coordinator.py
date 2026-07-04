@@ -12,7 +12,7 @@ import pandas as pd
 from quantbench.agent.llm import LLMClient
 from quantbench.agent.prompts import SYSTEM_PROMPT
 from quantbench.artifact.store import ArtifactStore
-from quantbench.config import CRITIC_MODEL, DEFAULT_COST_BPS, DEFAULT_MODEL, RUNS_DIR
+from quantbench.config import CRITIC_MODEL, DEFAULT_COST_BPS, DEFAULT_MODEL, MCP_SERVERS_CONFIG, RUNS_DIR
 from quantbench.config import (
     PORTFOLIO_MAX_WEIGHT,
     PORTFOLIO_TRAIN_TEST_SPLIT,
@@ -37,6 +37,7 @@ from quantbench.skilldocs.inject import build_augmented_system_prompt
 from quantbench.skilldocs.registry import SkillRegistryDocs
 from quantbench.skills.codeexec import run_signal_code_panel
 from quantbench.skills.data_quality import validate_universe_data
+from quantbench.skills.mcp_adapter import MCPClientManager, load_mcp_config
 from quantbench.skills.plot import (
     save_drawdown_plot,
     save_equity_curve_plot,
@@ -377,6 +378,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
             else None,
             ic_series=backtest.ic_series,
             ic_significance=backtest.ic_significance,
+            mcp_calls=ctx.mcp_calls,
         )
         ctx.review_report = review_report
         run.save_json("review_report.json", review_report.to_dict())
@@ -563,7 +565,14 @@ def build_read_skill_file_skill(docs_dir: Path = DEFAULT_SKILL_DOCS_DIR) -> Skil
     )
 
 
-def _build_registry(ctx: _RunContext, run, run_store: ArtifactStore, critic_llm, model: str) -> SkillRegistry:
+def _build_registry(
+    ctx: _RunContext,
+    run,
+    run_store: ArtifactStore,
+    critic_llm,
+    model: str,
+    mcp_manager: MCPClientManager | None = None,
+) -> SkillRegistry:
     registry = SkillRegistry()
     registry.register(build_fetch_ohlcv_skill(ctx))
     registry.register(build_run_signal_backtest_skill(ctx, run))
@@ -581,6 +590,9 @@ def _build_registry(ctx: _RunContext, run, run_store: ArtifactStore, critic_llm,
             _check_run_decay,
         )
     )
+    if mcp_manager is not None:
+        for skill in mcp_manager.build_skills():
+            registry.register(skill)
     return registry
 
 
@@ -603,6 +615,7 @@ class Coordinator:
         self.llm = llm or LLMClient(self.model)
         self.critic_llm = critic_llm or LLMClient(CRITIC_MODEL)
         self.critic_model = str(getattr(self.critic_llm, "model", CRITIC_MODEL))
+        self._mcp_configs = load_mcp_config(MCP_SERVERS_CONFIG)
 
     def run(self, user_request: str, *, skill_names: list[str] | None = None) -> RunResult:
         run = self.run_store.create_run(user_request)
@@ -722,7 +735,8 @@ class Coordinator:
             return self._execute_library_question(run, user_request, emit)
 
         ctx = _RunContext()
-        registry = _build_registry(ctx, run, self.run_store, self.critic_llm, self.model)
+        mcp_manager = MCPClientManager(self._mcp_configs, ctx) if self._mcp_configs else None
+        registry = _build_registry(ctx, run, self.run_store, self.critic_llm, self.model, mcp_manager)
         matched_skills = _select_skill_docs(user_request, skill_names)
         ctx.injected_skills = [skill.name for skill in matched_skills]
         system_prompt = build_augmented_system_prompt(SYSTEM_PROMPT, matched_skills)
@@ -831,7 +845,10 @@ class Coordinator:
             data_slices=_data_slices_from_cache(ctx.cache_meta),
             delegations=ctx.delegations,
             sandbox_usage=[asdict(item) for item in ctx.sandbox_usage],
+            mcp_calls=ctx.mcp_calls,
         )
+        if mcp_manager is not None:
+            mcp_manager.close()
 
         return RunResult(
             run_id=run.run_id,
@@ -1008,6 +1025,7 @@ class Coordinator:
             parent_run_id=parent_run_id,
             delegations=ctx.delegations,
             sandbox_usage=[asdict(item) for item in ctx.sandbox_usage],
+            mcp_calls=ctx.mcp_calls,
         )
         return RunResult(run_id=run.run_id, run_dir=run.run_dir, metrics=metrics, warnings=ctx.warnings, summary=summary)
 
