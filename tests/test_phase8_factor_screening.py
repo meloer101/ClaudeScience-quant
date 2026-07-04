@@ -227,6 +227,53 @@ def test_screen_factors_isolates_single_candidate_failure(tmp_path: Path, monkey
     assert "broken" in broken_config
 
 
+def test_screen_factors_sandbox_isolates_infinite_loop_candidate(tmp_path: Path, monkeypatch):
+    from quantbench.agent.coordinator import Coordinator
+    from quantbench.agent.tools import screening
+    from quantbench.artifact.store import ArtifactStore
+    from quantbench.skills.codeexec import run_signal_code_panel
+    from quantbench.skills.sandbox import SandboxConfig
+
+    _patch_universe_and_panel(monkeypatch, _panel())
+
+    def _tight_panel_sandbox(code, panel, *, sandbox=None, usage_sink=None):
+        return run_signal_code_panel(
+            code,
+            panel,
+            sandbox=SandboxConfig(cpu_seconds=1, mem_mb=512, wall_timeout_s=2.0),
+            usage_sink=usage_sink,
+        )
+
+    monkeypatch.setattr(screening, "run_signal_code_panel", _tight_panel_sandbox)
+    candidates = [
+        {"name": "loop", "code": "def compute(df):\n    while True:\n        pass\n"},
+        {"name": "good", "code": "def compute(df):\n    return df['close'].pct_change(1).fillna(0.0)\n"},
+    ]
+    script = [
+        ("tools", [("build_universe", {"universe_name": "sp500", "as_of_date": "2024-01-01"})]),
+        (
+            "tools",
+            [("screen_factors", {"candidates": candidates, "start": "2024-01-01", "end": "2024-01-08", "n_groups": 3})],
+        ),
+        ("text", "done"),
+    ]
+
+    result = Coordinator(
+        run_store=ArtifactStore(tmp_path / "runs"),
+        llm=FakeLLMClient(script),
+        critic_llm=JsonCriticLLM(),
+    ).run("批量筛选，隔离死循环候选")
+
+    summary = json.loads((result.run_dir / "factor_screen_summary.json").read_text(encoding="utf-8"))
+    statuses = {item["name"]: item["status"] for item in summary["candidates"]}
+    assert statuses == {"good": "completed", "loop": "failed"}
+    loop = next(item for item in summary["candidates"] if item["name"] == "loop")
+    assert "SandboxError" in loop["error"]
+    good = next(item for item in summary["candidates"] if item["name"] == "good")
+    good_manifest = json.loads((tmp_path / "runs" / good["run_id"] / "manifest.json").read_text(encoding="utf-8"))
+    assert good_manifest["sandbox_usage"]
+
+
 def test_screen_factors_requires_universe_and_candidate_limit(tmp_path: Path, monkeypatch):
     from quantbench.agent.coordinator import Coordinator
     from quantbench.artifact.store import ArtifactStore

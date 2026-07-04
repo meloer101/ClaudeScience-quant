@@ -64,7 +64,7 @@ class CrossSectionalBacktestResult:
 
 def run_cross_sectional_backtest(
     panel: pd.DataFrame,
-    compute_factor: Callable[[pd.DataFrame], pd.Series],
+    compute_factor: Callable[[pd.DataFrame], pd.Series] | None,
     n_groups: int = 10,
     cost_bps: float = 5.0,
     rebalance: str = "1D",
@@ -75,8 +75,11 @@ def run_cross_sectional_backtest(
     borrow_rates: pd.DataFrame | None = None,
     neutralize: list[str] | None = None,
     sector: pd.Series | None = None,
+    factor_values: pd.DataFrame | None = None,
 ) -> CrossSectionalBacktestResult:
     execution = execution or ExecutionConfig()
+    if (compute_factor is None) == (factor_values is None):
+        raise ValueError("provide exactly one of compute_factor or factor_values")
     if n_groups < 2:
         raise ValueError("n_groups must be at least 2")
     if panel.empty:
@@ -107,25 +110,15 @@ def run_cross_sectional_backtest(
             "this date range."
         )
 
-    factor_frames = []
-    for symbol, symbol_df in data.groupby("symbol", sort=False):
-        symbol_df = symbol_df.sort_values("timestamp").reset_index(drop=True)
-        factor = compute_factor(symbol_df)
-        factor = pd.Series(factor, index=symbol_df.index, dtype="float64")
-        factor_frames.append(
-            pd.DataFrame(
-                {
-                    "timestamp": symbol_df["timestamp"],
-                    "symbol": symbol,
-                    "factor": factor,
-                    "forward_return": forward_returns_for_execution(symbol_df, execution),
-                    "close": symbol_df["close"],
-                    "open": symbol_df["open"] if "open" in symbol_df.columns else np.nan,
-                    "volume": symbol_df["volume"] if "volume" in symbol_df.columns else np.nan,
-                    "dollar_volume": symbol_df["close"] * symbol_df["volume"] if "volume" in symbol_df.columns else np.nan,
-                }
-            )
-        )
+    if factor_values is None:
+        factor_frames = []
+        for symbol, symbol_df in data.groupby("symbol", sort=False):
+            symbol_df = symbol_df.sort_values("timestamp").reset_index(drop=True)
+            factor = compute_factor(symbol_df)  # type: ignore[misc]
+            factor = pd.Series(factor, index=symbol_df.index, dtype="float64")
+            factor_frames.append(_factor_frame(symbol_df, symbol, factor, execution))
+    else:
+        factor_frames = _factor_frames_from_values(data, factor_values, execution)
 
     factor_panel = pd.concat(factor_frames, ignore_index=True)
     factor_panel = factor_panel.replace([np.inf, -np.inf], np.nan).dropna(subset=["factor", "forward_return"])
@@ -226,6 +219,45 @@ def run_cross_sectional_backtest(
         liquidity_cost=liquidity_cost.reindex(net_returns.index).fillna(0),
         borrow_cost=borrow_cost.reindex(net_returns.index).fillna(0),
     )
+
+
+def _factor_frame(symbol_df: pd.DataFrame, symbol: str, factor: pd.Series, execution: ExecutionConfig) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "timestamp": symbol_df["timestamp"],
+            "symbol": symbol,
+            "factor": factor,
+            "forward_return": forward_returns_for_execution(symbol_df, execution),
+            "close": symbol_df["close"],
+            "open": symbol_df["open"] if "open" in symbol_df.columns else np.nan,
+            "volume": symbol_df["volume"] if "volume" in symbol_df.columns else np.nan,
+            "dollar_volume": symbol_df["close"] * symbol_df["volume"] if "volume" in symbol_df.columns else np.nan,
+        }
+    )
+
+
+def _factor_frames_from_values(
+    data: pd.DataFrame, factor_values: pd.DataFrame, execution: ExecutionConfig
+) -> list[pd.DataFrame]:
+    required = {"timestamp", "symbol", "factor"}
+    missing = required - set(factor_values.columns)
+    if missing:
+        raise ValueError(f"factor_values is missing required column(s): {', '.join(sorted(missing))}")
+
+    values = factor_values.loc[:, ["timestamp", "symbol", "factor"]].copy()
+    values["timestamp"] = pd.to_datetime(values["timestamp"], utc=True)
+    values["symbol"] = values["symbol"].astype(str)
+    values["factor"] = pd.to_numeric(values["factor"], errors="coerce")
+    if values.duplicated(["timestamp", "symbol"]).any():
+        raise ValueError("factor_values must contain at most one factor per timestamp/symbol")
+
+    frames = []
+    for symbol, symbol_df in data.groupby("symbol", sort=False):
+        symbol_df = symbol_df.sort_values("timestamp").reset_index(drop=True)
+        symbol_values = values[values["symbol"].eq(str(symbol))].set_index("timestamp")["factor"]
+        factor = symbol_df["timestamp"].map(symbol_values)
+        frames.append(_factor_frame(symbol_df, symbol, pd.Series(factor, index=symbol_df.index, dtype="float64"), execution))
+    return frames
 
 
 def _assign_groups(factor_panel: pd.DataFrame, n_groups: int) -> pd.DataFrame:

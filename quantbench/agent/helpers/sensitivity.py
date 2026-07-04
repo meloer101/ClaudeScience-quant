@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
@@ -10,7 +9,7 @@ from quantbench.engine.execution import ExecutionConfig
 
 def _cross_execution_sensitivity(
     panel: pd.DataFrame,
-    compute: Callable[[pd.DataFrame], pd.Series],
+    factor_values: pd.DataFrame,
     n_groups: int,
     cost_bps: float,
     membership_intervals: dict[str, list[list[str]]] | None,
@@ -24,7 +23,7 @@ def _cross_execution_sensitivity(
         return None
     close_metrics = run_cross_sectional_backtest(
         panel,
-        compute,
+        None,
         n_groups=n_groups,
         cost_bps=cost_bps,
         membership_intervals=membership_intervals,
@@ -34,10 +33,11 @@ def _cross_execution_sensitivity(
         borrow_rates=borrow_rates,
         neutralize=neutralize_dims,
         sector=sector,
+        factor_values=factor_values,
     ).metrics
     open_next_metrics = run_cross_sectional_backtest(
         panel,
-        compute,
+        None,
         n_groups=n_groups,
         cost_bps=cost_bps,
         membership_intervals=membership_intervals,
@@ -47,6 +47,7 @@ def _cross_execution_sensitivity(
         borrow_rates=borrow_rates,
         neutralize=neutralize_dims,
         sector=sector,
+        factor_values=factor_values,
     ).metrics
     return {
         "close_t_sharpe": close_metrics.get("sharpe"),
@@ -56,7 +57,7 @@ def _cross_execution_sensitivity(
 
 def _metrics_without_borrow(
     panel: pd.DataFrame,
-    compute: Callable[[pd.DataFrame], pd.Series],
+    factor_values: pd.DataFrame,
     n_groups: int,
     cost_bps: float,
     membership_intervals: dict[str, list[list[str]]] | None,
@@ -68,7 +69,7 @@ def _metrics_without_borrow(
 ) -> dict[str, float]:
     return run_cross_sectional_backtest(
         panel,
-        compute,
+        None,
         n_groups=n_groups,
         cost_bps=cost_bps,
         membership_intervals=membership_intervals,
@@ -77,12 +78,13 @@ def _metrics_without_borrow(
         liquidity_cost_config=liquidity_config,
         neutralize=neutralize_dims,
         sector=sector,
+        factor_values=factor_values,
     ).metrics
 
 
 def _neutralization_comparison(
     panel: pd.DataFrame,
-    compute: Callable[[pd.DataFrame], pd.Series],
+    factor_values: pd.DataFrame,
     n_groups: int,
     cost_bps: float,
     membership_intervals: dict[str, list[list[str]]] | None,
@@ -97,7 +99,7 @@ def _neutralization_comparison(
         return {}
     raw = run_cross_sectional_backtest(
         panel,
-        compute,
+        None,
         n_groups=n_groups,
         cost_bps=cost_bps,
         membership_intervals=membership_intervals,
@@ -105,10 +107,11 @@ def _neutralization_comparison(
         execution=execution,
         liquidity_cost_config=liquidity_config,
         borrow_rates=borrow_rates,
+        factor_values=factor_values,
     )
     neutralized = run_cross_sectional_backtest(
         panel,
-        compute,
+        None,
         n_groups=n_groups,
         cost_bps=cost_bps,
         membership_intervals=membership_intervals,
@@ -118,6 +121,7 @@ def _neutralization_comparison(
         borrow_rates=borrow_rates,
         neutralize=neutralize_dims,
         sector=sector,
+        factor_values=factor_values,
     )
     return {
         "dimensions": ",".join(neutralize_dims),

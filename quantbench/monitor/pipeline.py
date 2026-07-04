@@ -17,7 +17,7 @@ from quantbench.engine.vectorized_backtest import run_vectorized_backtest
 from quantbench.factors.compute_extract import extract_compute_source
 from quantbench.monitor.decay import DecayReport, compute_decay_report
 from quantbench.portfolio.combine import combine
-from quantbench.skills.codeexec import load_signal_function, run_signal_code
+from quantbench.skills.codeexec import run_signal_code, run_signal_code_panel
 
 ALIVE_VERDICTS = {"STRONG", "PROMISING"}
 
@@ -86,8 +86,10 @@ def _refresh_and_backtest(run_id: str, conn: duckdb.DuckDBPyConnection, refresh_
         if panel.empty:
             raise ValueError(f"no warehouse data available for {run_id}'s universe after refresh")
 
-        compute = load_signal_function(code)
-        backtest = run_cross_sectional_backtest(panel, compute, n_groups=_DEFAULT_N_GROUPS, cost_bps=DEFAULT_COST_BPS)
+        factor_values = run_signal_code_panel(code, panel)
+        backtest = run_cross_sectional_backtest(
+            panel, None, n_groups=_DEFAULT_N_GROUPS, cost_bps=DEFAULT_COST_BPS, factor_values=factor_values
+        )
         return backtest.returns
 
     fetch_params = config.get("fetch_params") or {}

@@ -49,6 +49,66 @@ def test_registry_matches_crypto_cross_sectional_request_but_not_equity_single_s
     assert registry.match("测试 AAPL 单标的均线动量") == []
 
 
+def test_registry_loads_directory_skill_md_and_legacy_flat_files(tmp_path):
+    from quantbench.skilldocs.registry import SkillRegistryDocs
+
+    skill_dir = tmp_path / "dir-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: dir-skill\n"
+        "description: Directory style skill\n"
+        "triggers:\n"
+        "  - dir trigger\n"
+        "---\n"
+        "Directory body.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "reference.csv").write_text("secret,reference\n", encoding="utf-8")
+    (tmp_path / "legacy-skill.md").write_text(
+        "---\n"
+        "name: legacy-skill\n"
+        "description: Legacy flat skill\n"
+        "triggers:\n"
+        "  - legacy trigger\n"
+        "---\n"
+        "Legacy body.\n",
+        encoding="utf-8",
+    )
+
+    docs = SkillRegistryDocs(tmp_path).load_all()
+
+    assert [doc.name for doc in docs] == ["dir-skill", "legacy-skill"]
+    dir_doc = docs[0]
+    assert dir_doc.body == "Directory body."
+    assert dir_doc.attachments == ["reference.csv"]
+
+
+def test_augmented_prompt_lists_skill_attachments_without_inlining_them(tmp_path):
+    from quantbench.skilldocs.inject import build_augmented_system_prompt
+    from quantbench.skilldocs.registry import SkillRegistryDocs
+
+    skill_dir = tmp_path / "dir-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: dir-skill\n"
+        "description: Directory style skill\n"
+        "triggers:\n"
+        "  - dir trigger\n"
+        "---\n"
+        "Use the reference only when needed.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "reference.csv").write_text("do-not-inline\n", encoding="utf-8")
+
+    doc = SkillRegistryDocs(tmp_path).get("dir-skill")
+    prompt = build_augmented_system_prompt("BASE", [doc])
+
+    assert "Attached files available via read_skill_file: reference.csv" in prompt
+    assert "do-not-inline" not in prompt
+
+
 def test_augmented_prompt_appends_skill_body_without_replacing_base():
     from quantbench.skilldocs.doc import SkillDoc
     from quantbench.skilldocs.inject import build_augmented_system_prompt
@@ -148,3 +208,29 @@ def test_coordinator_forced_skill_injects_without_auto_match(tmp_path, monkeypat
 
     manifest = json.loads((result.run_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["injected_skills"] == ["reviewer-weak-triage"]
+
+
+def test_read_skill_file_allows_attached_file_and_blocks_traversal(tmp_path):
+    from quantbench.agent.coordinator import build_read_skill_file_skill
+
+    skill_dir = tmp_path / "docs" / "dir-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: dir-skill\n"
+        "description: Directory style skill\n"
+        "triggers:\n"
+        "  - dir trigger\n"
+        "---\n"
+        "Body.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "reference.csv").write_text("allowed\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("blocked\n", encoding="utf-8")
+
+    tool = build_read_skill_file_skill(tmp_path / "docs")
+
+    assert tool.fn("dir-skill", "reference.csv") == {"skill": "dir-skill", "path": "reference.csv", "content": "allowed\n"}
+    denied = tool.fn("dir-skill", "../../.env")
+    assert "error" in denied
+    assert "outside skill directory" in denied["error"]

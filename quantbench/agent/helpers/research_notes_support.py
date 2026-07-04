@@ -9,7 +9,7 @@ from quantbench.api import run_reader
 from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
 from quantbench.review import ReviewReport
 from quantbench.review.lookback import estimate_lookback_bars
-from quantbench.skills.codeexec import load_signal_function, run_signal_code
+from quantbench.skills.codeexec import run_signal_code, run_signal_code_panel
 from quantbench.engine.vectorized_backtest import run_vectorized_backtest
 
 
@@ -140,13 +140,14 @@ def _rerun_cross_with_code(
     membership_intervals: dict[str, list[list[str]]] | None = None,
 ) -> dict[str, float] | None:
     try:
-        compute = load_signal_function(code)
+        factor_values = run_signal_code_panel(code, panel)
         return run_cross_sectional_backtest(
             panel,
-            compute,
+            None,
             n_groups=n_groups,
             cost_bps=cost_bps,
             membership_intervals=membership_intervals,
+            factor_values=factor_values,
         ).metrics
     except Exception:
         return None

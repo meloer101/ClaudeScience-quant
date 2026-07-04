@@ -8,6 +8,22 @@ def _sample_df(n=20):
     return pd.DataFrame({"close": [float(i) for i in range(n)]})
 
 
+def _sample_panel() -> pd.DataFrame:
+    rows = []
+    for symbol, offset in (("AAA", 0.0), ("BBB", 10.0), ("CCC", 20.0)):
+        for day in range(5):
+            rows.append(
+                {
+                    "timestamp": f"2024-01-{day + 1:02d}",
+                    "symbol": symbol,
+                    "open": offset + day + 0.5,
+                    "close": offset + day + 1.0,
+                    "volume": 1000 + day,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def _probe_rlimit_as(queue) -> None:
     import resource
 
@@ -112,3 +128,54 @@ def test_run_signal_code_wall_clock_backstop_fires_before_a_looser_cpu_limit():
     elapsed = time.monotonic() - started
 
     assert elapsed < tight_config.wall_timeout_s + 3.0
+
+
+def test_run_signal_code_panel_matches_unsandboxed_groupby_execution():
+    from quantbench.skills.codeexec import _execute_signal_code_panel, run_signal_code_panel
+
+    code = "def compute(df):\n    return df['close'].pct_change().fillna(0)\n"
+    panel = _sample_panel()
+
+    sandboxed = run_signal_code_panel(code, panel)
+    unsandboxed = _execute_signal_code_panel(code, panel)
+
+    pd.testing.assert_frame_equal(sandboxed, unsandboxed)
+    assert list(sandboxed.columns) == ["timestamp", "symbol", "factor"]
+    assert len(sandboxed) == len(panel)
+
+
+def test_cross_sectional_backtest_accepts_precomputed_factor_values():
+    from quantbench.engine.cross_sectional_backtest import run_cross_sectional_backtest
+    from quantbench.skills.codeexec import _execute_signal_code_panel, load_signal_function
+
+    code = "def compute(df):\n    return df['close'].pct_change().fillna(0)\n"
+    panel = _sample_panel()
+    compute = load_signal_function(code)
+    factor_values = _execute_signal_code_panel(code, panel)
+
+    direct = run_cross_sectional_backtest(panel, compute, n_groups=3, cost_bps=0)
+    precomputed = run_cross_sectional_backtest(panel, None, n_groups=3, cost_bps=0, factor_values=factor_values)
+
+    assert precomputed.metrics == direct.metrics
+    pd.testing.assert_frame_equal(precomputed.factor_panel, direct.factor_panel)
+
+
+def test_run_in_sandbox_records_usage_metadata():
+    from quantbench.skills.sandbox import SandboxConfig, run_in_sandbox
+    from quantbench.skills.codeexec import _execute_signal_code
+
+    usage = []
+    result = run_in_sandbox(
+        _execute_signal_code,
+        "def compute(df):\n    return df['close']\n",
+        _sample_df(3),
+        config=SandboxConfig(cpu_seconds=2, mem_mb=256, wall_timeout_s=5.0),
+        usage_sink=usage,
+    )
+
+    pd.testing.assert_series_equal(result, _sample_df(3)["close"])
+    assert len(usage) == 1
+    assert usage[0].wall_seconds >= 0
+    assert usage[0].exitcode == 0
+    assert usage[0].limits["cpu_seconds"] == 2
+    assert usage[0].max_rss_bytes >= 0

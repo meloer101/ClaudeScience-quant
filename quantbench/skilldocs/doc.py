@@ -14,6 +14,7 @@ class SkillDoc:
     triggers: list[str]
     body: str
     path: str
+    attachments: list[str] | None = None
 
 
 def parse_skill_md(path: Path) -> SkillDoc:

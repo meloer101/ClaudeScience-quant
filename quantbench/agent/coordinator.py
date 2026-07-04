@@ -35,7 +35,7 @@ from quantbench.library.index import ExperimentIndex
 from quantbench.library.trials import count_trials, universe_signature
 from quantbench.skilldocs.inject import build_augmented_system_prompt
 from quantbench.skilldocs.registry import SkillRegistryDocs
-from quantbench.skills.codeexec import load_signal_function
+from quantbench.skills.codeexec import run_signal_code_panel
 from quantbench.skills.data_quality import validate_universe_data
 from quantbench.skills.plot import (
     save_drawdown_plot,
@@ -226,16 +226,16 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
                 f"{len(ctx.data_quality.suspicious_price_jumps)} symbols have >50% one-period price jumps."
             )
 
-        compute = load_signal_function(code)
         execution_config = _execution_config(execution)
         liquidity_config = _liquidity_cost_config(liquidity_cost)
         borrow_config = _borrow_cost_config(borrow_cost)
         borrow_rates = _borrow_rates_for_panel(panel, borrow_config)
         neutralize_dims = _neutralize_dimensions(neutralize)
         sector = _sector_series(ctx.universe)
+        factor_values = run_signal_code_panel(code, panel, usage_sink=ctx.sandbox_usage)
         backtest = run_cross_sectional_backtest(
             panel,
-            compute,
+            None,
             n_groups=n_groups,
             cost_bps=cost_bps,
             membership_intervals=ctx.universe.membership_intervals,
@@ -245,12 +245,13 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
             borrow_rates=borrow_rates,
             neutralize=neutralize_dims,
             sector=sector,
+            factor_values=factor_values,
         )
         funding_sensitivity = None
         if funding_rates is not None and not funding_rates.empty:
             no_funding_metrics = run_cross_sectional_backtest(
                 panel,
-                compute,
+                None,
                 n_groups=n_groups,
                 cost_bps=cost_bps,
                 membership_intervals=ctx.universe.membership_intervals,
@@ -259,6 +260,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
                 borrow_rates=borrow_rates,
                 neutralize=neutralize_dims,
                 sector=sector,
+                factor_values=factor_values,
             ).metrics
             funding_sensitivity = {
                 "sharpe_before_funding": no_funding_metrics.get("sharpe"),
@@ -278,7 +280,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
         ctx.long_short_contribution = backtest.long_short_contribution
         ctx.neutralization_comparison = _neutralization_comparison(
             panel,
-            compute,
+            factor_values,
             n_groups,
             cost_bps,
             ctx.universe.membership_intervals,
@@ -314,7 +316,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
             cost_bps=cost_bps,
             rerun_at_cost=lambda bps: run_cross_sectional_backtest(
                 panel,
-                compute,
+                None,
                 n_groups=n_groups,
                 cost_bps=bps,
                 membership_intervals=ctx.universe.membership_intervals,
@@ -324,6 +326,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
                 borrow_rates=borrow_rates,
                 neutralize=neutralize_dims,
                 sector=sector,
+                factor_values=factor_values,
             ).metrics,
             rerun_with_code=lambda candidate: _rerun_cross_with_code(
                 candidate, panel, n_groups, cost_bps, ctx.universe.membership_intervals
@@ -343,7 +346,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
             funding_cost_sensitivity=funding_sensitivity,
             execution_sensitivity=_cross_execution_sensitivity(
                 panel,
-                compute,
+                factor_values,
                 n_groups,
                 cost_bps,
                 ctx.universe.membership_intervals,
@@ -358,7 +361,7 @@ def build_run_cross_sectional_backtest_skill(ctx: _RunContext, run) -> Skill:
             borrow_cost_sensitivity={
                 "sharpe_before_borrow": _metrics_without_borrow(
                     panel,
-                    compute,
+                    factor_values,
                     n_groups,
                     cost_bps,
                     ctx.universe.membership_intervals,
@@ -523,6 +526,43 @@ def build_screen_factors_skill(ctx: _RunContext, run, run_store: ArtifactStore, 
     )
 
 
+READ_SKILL_FILE_PARAMS = {
+    "type": "object",
+    "properties": {
+        "skill": {"type": "string", "description": "Injected Skill name."},
+        "path": {"type": "string", "description": "Relative attached file path inside that Skill directory."},
+    },
+    "required": ["skill", "path"],
+}
+
+
+def build_read_skill_file_skill(docs_dir: Path = DEFAULT_SKILL_DOCS_DIR) -> Skill:
+    def _read_skill_file(skill: str, path: str) -> dict[str, str]:
+        try:
+            doc = SkillRegistryDocs(docs_dir).get(skill)
+            skill_path = Path(doc.path)
+            if skill_path.name != "SKILL.md":
+                return {"error": f"skill {skill} has no attachment directory"}
+            skill_dir = skill_path.parent.resolve()
+            requested = (skill_dir / path).resolve()
+            try:
+                requested.relative_to(skill_dir)
+            except ValueError:
+                return {"error": "requested path is outside skill directory"}
+            if not requested.is_file():
+                return {"error": f"skill file not found: {path}"}
+            return {"skill": skill, "path": path, "content": requested.read_text(encoding="utf-8")}
+        except Exception as exc:  # noqa: BLE001 - tools report structured errors to the agent loop
+            return {"error": f"{type(exc).__name__}: {exc}"}
+
+    return Skill(
+        "read_skill_file",
+        "Read an attached file from an injected directory-style Skill. Path must stay inside that Skill directory.",
+        READ_SKILL_FILE_PARAMS,
+        _read_skill_file,
+    )
+
+
 def _build_registry(ctx: _RunContext, run, run_store: ArtifactStore, critic_llm, model: str) -> SkillRegistry:
     registry = SkillRegistry()
     registry.register(build_fetch_ohlcv_skill(ctx))
@@ -530,6 +570,7 @@ def _build_registry(ctx: _RunContext, run, run_store: ArtifactStore, critic_llm,
     registry.register(build_build_universe_skill(ctx, run))
     registry.register(build_run_cross_sectional_backtest_skill(ctx, run))
     registry.register(build_screen_factors_skill(ctx, run, run_store, critic_llm, model))
+    registry.register(build_read_skill_file_skill(DEFAULT_SKILL_DOCS_DIR))
     registry.register(build_optimize_portfolio_skill(run_store, critic_llm, model, run))
     registry.register(
         Skill(
@@ -789,6 +830,7 @@ class Coordinator:
             injected_skills=ctx.injected_skills,
             data_slices=_data_slices_from_cache(ctx.cache_meta),
             delegations=ctx.delegations,
+            sandbox_usage=[asdict(item) for item in ctx.sandbox_usage],
         )
 
         return RunResult(
@@ -965,6 +1007,7 @@ class Coordinator:
             critic=ctx.critic_report.to_dict() if ctx.critic_report else None,
             parent_run_id=parent_run_id,
             delegations=ctx.delegations,
+            sandbox_usage=[asdict(item) for item in ctx.sandbox_usage],
         )
         return RunResult(run_id=run.run_id, run_dir=run.run_dir, metrics=metrics, warnings=ctx.warnings, summary=summary)
 
@@ -1030,5 +1073,3 @@ def _is_library_question(user_request: str) -> bool:
         "my runs",
     )
     return any(marker in text for marker in history_markers)
-
-

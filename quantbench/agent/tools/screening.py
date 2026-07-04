@@ -1,6 +1,7 @@
 import json
 import math
 import traceback
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +34,7 @@ from quantbench.engine.execution import ExecutionConfig
 from quantbench.review import CriticReport, ReviewFinding, ReviewReport, determine_verdict, run_review
 from quantbench.review.pbo import PBOResult, probability_of_backtest_overfitting
 from quantbench.review.report import _dsr_finding, _pbo_finding
-from quantbench.skills.codeexec import load_signal_function
+from quantbench.skills.codeexec import run_signal_code_panel
 from quantbench.skills.data_quality import validate_universe_data
 from quantbench.skills.plot import (
     save_drawdown_plot,
@@ -104,10 +105,10 @@ def _run_screen_candidate(
     )
     try:
         ctx.data_quality = validate_universe_data(panel, universe, end=end)
-        compute = load_signal_function(candidate["code"])
+        factor_values = run_signal_code_panel(candidate["code"], panel, usage_sink=ctx.sandbox_usage)
         backtest = run_cross_sectional_backtest(
             panel,
-            compute,
+            None,
             n_groups=n_groups,
             cost_bps=cost_bps,
             membership_intervals=universe.membership_intervals,
@@ -117,12 +118,13 @@ def _run_screen_candidate(
             borrow_rates=borrow_rates,
             neutralize=neutralize_dims,
             sector=sector,
+            factor_values=factor_values,
         )
         funding_sensitivity = None
         if funding_rates is not None and not funding_rates.empty:
             no_funding_metrics = run_cross_sectional_backtest(
                 panel,
-                compute,
+                None,
                 n_groups=n_groups,
                 cost_bps=cost_bps,
                 membership_intervals=universe.membership_intervals,
@@ -131,6 +133,7 @@ def _run_screen_candidate(
                 borrow_rates=borrow_rates,
                 neutralize=neutralize_dims,
                 sector=sector,
+                factor_values=factor_values,
             ).metrics
             funding_sensitivity = {
                 "sharpe_before_funding": no_funding_metrics.get("sharpe"),
@@ -156,7 +159,7 @@ def _run_screen_candidate(
             cost_bps=cost_bps,
             rerun_at_cost=lambda bps: run_cross_sectional_backtest(
                 panel,
-                compute,
+                None,
                 n_groups=n_groups,
                 cost_bps=bps,
                 membership_intervals=universe.membership_intervals,
@@ -166,6 +169,7 @@ def _run_screen_candidate(
                 borrow_rates=borrow_rates,
                 neutralize=neutralize_dims,
                 sector=sector,
+                factor_values=factor_values,
             ).metrics,
             rerun_with_code=lambda code: _rerun_cross_with_code(
                 code, panel, n_groups, cost_bps, universe.membership_intervals
@@ -184,7 +188,7 @@ def _run_screen_candidate(
             funding_cost_sensitivity=funding_sensitivity,
             execution_sensitivity=_cross_execution_sensitivity(
                 panel,
-                compute,
+                factor_values,
                 n_groups,
                 cost_bps,
                 universe.membership_intervals,
@@ -199,7 +203,7 @@ def _run_screen_candidate(
             borrow_cost_sensitivity={
                 "sharpe_before_borrow": _metrics_without_borrow(
                     panel,
-                    compute,
+                    factor_values,
                     n_groups,
                     cost_bps,
                     universe.membership_intervals,
@@ -221,7 +225,7 @@ def _run_screen_candidate(
         ctx.warnings.extend(_review_warning_messages(review_report))
         neutralization_comparison = _neutralization_comparison(
             panel,
-            compute,
+            factor_values,
             n_groups,
             cost_bps,
             universe.membership_intervals,
@@ -314,6 +318,7 @@ def _run_screen_candidate(
             parent_run_id=parent_run_id,
             data_slices=_data_slices_from_cache(cache_meta),
             delegations=ctx.delegations,
+            sandbox_usage=[asdict(item) for item in ctx.sandbox_usage],
         )
         item = _screen_item(candidate["name"], child.run_id, "completed", backtest.metrics, review_report, ctx.critic_report)
         item["_returns"] = backtest.returns

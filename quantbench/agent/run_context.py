@@ -58,3 +58,4 @@ class _RunContext:
         self.neutralization_comparison: dict[str, Any] = {}
         self.screened = False
         self.delegations: list[dict[str, Any]] = []
+        self.sandbox_usage: list[Any] = []

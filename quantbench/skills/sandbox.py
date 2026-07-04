@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
+import signal
+import tempfile
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -34,10 +38,26 @@ class SandboxConfig:
     max_write_mb: int = SANDBOX_MAX_WRITE_MB
 
 
+@dataclass(frozen=True)
+class SandboxUsage:
+    wall_seconds: float
+    exitcode: int | None
+    max_rss_bytes: int
+    limits: dict[str, int | float]
+    unsupported_limits: list[str]
+    cpu_limit_hit: bool = False
+    wall_timeout_hit: bool = False
+
+
 _DEFAULT_CONFIG = SandboxConfig()
 
 
-def run_in_sandbox(func: Callable[..., Any], *args: Any, config: SandboxConfig | None = None) -> Any:
+def run_in_sandbox(
+    func: Callable[..., Any],
+    *args: Any,
+    config: SandboxConfig | None = None,
+    usage_sink: list[SandboxUsage] | None = None,
+) -> Any:
     """Runs func(*args) in a child process with CPU/address-space/file-size
     rlimits and a wall-clock backstop, and returns its result. `func` must be
     a module-level function (picklable by reference) and its return value
@@ -52,8 +72,10 @@ def run_in_sandbox(func: Callable[..., Any], *args: Any, config: SandboxConfig |
     result_queue: mp.Queue = _CONTEXT.Queue()
     process = _CONTEXT.Process(target=_run_in_child, args=(func, args, config, result_queue))
 
+    started = time.perf_counter()
     process.start()
     process.join(config.wall_timeout_s)
+    wall_seconds = time.perf_counter() - started
 
     if process.is_alive():
         process.terminate()
@@ -61,16 +83,50 @@ def run_in_sandbox(func: Callable[..., Any], *args: Any, config: SandboxConfig |
         if process.is_alive():
             process.kill()
             process.join()
+        _append_usage(
+            usage_sink,
+            SandboxUsage(
+                wall_seconds=round(wall_seconds, 6),
+                exitcode=process.exitcode,
+                max_rss_bytes=0,
+                limits=_limits_dict(config),
+                unsupported_limits=[],
+                wall_timeout_hit=True,
+                cpu_limit_hit=_cpu_limit_hit(process.exitcode),
+            ),
+        )
         raise SandboxError(f"sandbox: wall-clock timeout exceeded ({config.wall_timeout_s}s)")
 
     if result_queue.empty():
+        _append_usage(
+            usage_sink,
+            SandboxUsage(
+                wall_seconds=round(wall_seconds, 6),
+                exitcode=process.exitcode,
+                max_rss_bytes=0,
+                limits=_limits_dict(config),
+                unsupported_limits=[],
+                cpu_limit_hit=_cpu_limit_hit(process.exitcode),
+            ),
+        )
         raise SandboxError(
             f"sandbox: child process terminated abnormally (exit code {process.exitcode}) without "
             "reporting a result - likely killed by the OS for exceeding a resource limit "
             f"(CPU {config.cpu_seconds}s / memory {config.mem_mb}MB)"
         )
 
-    status, payload = result_queue.get()
+    status, payload, child_usage = result_queue.get()
+    _append_usage(
+        usage_sink,
+        SandboxUsage(
+            wall_seconds=round(wall_seconds, 6),
+            exitcode=process.exitcode,
+            max_rss_bytes=child_usage.get("max_rss_bytes", 0),
+            limits=_limits_dict(config),
+            unsupported_limits=child_usage.get("unsupported_limits", []),
+            cpu_limit_hit=_cpu_limit_hit(process.exitcode),
+        ),
+    )
     if status == "error":
         raise SandboxError(payload)
     if status == "exception":
@@ -107,18 +163,52 @@ def _run_in_child(func: Callable[..., Any], args: tuple, config: SandboxConfig, 
     multiprocessing's process bootstrap - every failure mode is caught and
     reported through result_queue instead, since an uncaught exception here
     would just look like an unexplained nonzero exit code to the parent."""
-    _apply_rlimits(config)
+    unsupported_limits = _apply_rlimits(config)
 
     try:
-        result = func(*args)
+        # Without Docker/chroot there is no real mount namespace to enforce.
+        # Generated code already lacks open()/__import__ at the language layer;
+        # running from an empty temp cwd is a small defense-in-depth guard for
+        # accidental relative-path writes if that layer is ever loosened.
+        with tempfile.TemporaryDirectory(prefix="quantbench-sandbox-") as tmpdir:
+            os.chdir(tmpdir)
+            result = func(*args)
     except MemoryError:
-        result_queue.put(("error", "sandbox: memory limit exceeded"))
+        result_queue.put(("error", "sandbox: memory limit exceeded", _child_usage(unsupported_limits)))
         return
     except Exception as exc:  # noqa: BLE001 - forward the original exception type/message, not a crash
-        result_queue.put(("exception", (type(exc), str(exc))))
+        result_queue.put(("exception", (type(exc), str(exc)), _child_usage(unsupported_limits)))
         return
 
     try:
-        result_queue.put(("ok", result))
+        result_queue.put(("ok", result, _child_usage(unsupported_limits)))
     except Exception as exc:  # noqa: BLE001 - e.g. an unpicklable result; report it rather than hang the parent
-        result_queue.put(("error", f"sandbox: failed to serialize result: {exc}"))
+        result_queue.put(("error", f"sandbox: failed to serialize result: {exc}", _child_usage(unsupported_limits)))
+
+
+def _limits_dict(config: SandboxConfig) -> dict[str, int | float]:
+    return {
+        "cpu_seconds": config.cpu_seconds,
+        "mem_mb": config.mem_mb,
+        "wall_timeout_s": config.wall_timeout_s,
+        "max_write_mb": config.max_write_mb,
+    }
+
+
+def _append_usage(usage_sink: list[SandboxUsage] | None, usage: SandboxUsage) -> None:
+    if usage_sink is not None:
+        usage_sink.append(usage)
+
+
+def _cpu_limit_hit(exitcode: int | None) -> bool:
+    return exitcode in {-signal.SIGXCPU, -signal.SIGKILL}
+
+
+def _child_usage(unsupported_limits: list[str]) -> dict[str, Any]:
+    import resource
+    import sys
+
+    max_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if sys.platform != "darwin":
+        max_rss *= 1024
+    return {"max_rss_bytes": max_rss, "unsupported_limits": unsupported_limits}

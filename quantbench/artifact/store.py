@@ -80,6 +80,7 @@ class Run:
         injected_skills: list[str] | None = None,
         data_slices: list[dict[str, Any]] | None = None,
         delegations: list[dict[str, Any]] | None = None,
+        sandbox_usage: list[dict[str, Any]] | None = None,
     ) -> Path:
         manifest = {
             "run_id": self.run_id,
@@ -101,6 +102,7 @@ class Run:
             "conversation_log": conversation_log,
             "steps": self.steps,
             "delegations": delegations or [],
+            "sandbox_usage": sandbox_usage or [],
         }
         return self.save_json("manifest.json", manifest)
 

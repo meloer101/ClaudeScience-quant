@@ -21,4 +21,6 @@ def build_augmented_system_prompt(base_prompt: str, skills: list[SkillDoc]) -> s
                 skill.body.strip(),
             ]
         )
+        if skill.attachments:
+            sections.append(f"Attached files available via read_skill_file: {', '.join(skill.attachments)}")
     return "\n".join(sections)

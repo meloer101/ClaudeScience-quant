@@ -289,6 +289,71 @@ def test_run_monitor_pass_only_checks_alive_runs(tmp_path, monkeypatch):
     assert weak_id not in checked_ids
 
 
+def _build_cross_sectional_run(tmp_path, code: str, symbols=tuple(f"S{i:02d}" for i in range(12))):
+    """Minimal on-disk cross-sectional run (config.universe with symbols +
+    signal.py) so the pipeline's cross-sectional branch of _refresh_and_backtest
+    can be driven directly."""
+    from quantbench.artifact.store import ArtifactStore
+
+    store = ArtifactStore(tmp_path / "runs")
+    run = store.create_run("cross-sectional monitor fixture")
+    run.save_code("signal.py", code)
+    run.save_config({"universe": {"symbols": list(symbols), "asset_class": "equity"}})
+    run.finalize(
+        data_hash="sha256:test",
+        code_hash="sha256:test",
+        metrics={},
+        review={"verdict": "STRONG", "verdict_reason": "test fixture", "findings": []},
+    )
+    return run.run_id
+
+
+def _cross_sectional_panel(symbols=tuple(f"S{i:02d}" for i in range(12)), n=40):
+    frames = []
+    for i, symbol in enumerate(symbols):
+        df = _ohlcv_df(n, start="2023-01-01", seed=i)
+        df["symbol"] = symbol
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True)
+
+
+def test_refresh_and_backtest_cross_sectional_goes_through_sandbox(tmp_path, monkeypatch):
+    """The cross-sectional monitoring re-run must route model code through the
+    sandbox (run_signal_code_panel), same as the coordinator and screen paths -
+    otherwise a runaway factor would stall the background monitor process."""
+    from quantbench.monitor import pipeline as pipeline_mod
+
+    panel = _cross_sectional_panel()
+    monkeypatch.setattr(pipeline_mod, "refresh_universe", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline_mod, "query_universe_ohlcv", lambda *a, **k: panel)
+
+    good_id = _build_cross_sectional_run(tmp_path, "def compute(df):\n    return df['close'].pct_change(5).fillna(0.0)\n")
+    returns = pipeline_mod._refresh_and_backtest(good_id, conn=None, refresh_start="2023-01-01")
+    assert isinstance(returns, pd.Series)
+    assert len(returns) > 0
+
+
+def test_refresh_and_backtest_cross_sectional_isolates_infinite_loop(tmp_path, monkeypatch):
+    from quantbench.monitor import pipeline as pipeline_mod
+    from quantbench.skills.codeexec import run_signal_code_panel
+    from quantbench.skills.sandbox import SandboxConfig, SandboxError
+
+    panel = _cross_sectional_panel()
+    monkeypatch.setattr(pipeline_mod, "refresh_universe", lambda *a, **k: None)
+    monkeypatch.setattr(pipeline_mod, "query_universe_ohlcv", lambda *a, **k: panel)
+
+    def _tight_panel_sandbox(code, panel, *, sandbox=None, usage_sink=None):
+        return run_signal_code_panel(
+            code, panel, sandbox=SandboxConfig(cpu_seconds=1, mem_mb=512, wall_timeout_s=2.0), usage_sink=usage_sink
+        )
+
+    monkeypatch.setattr(pipeline_mod, "run_signal_code_panel", _tight_panel_sandbox)
+
+    loop_id = _build_cross_sectional_run(tmp_path, "def compute(df):\n    while True:\n        pass\n")
+    with pytest.raises(SandboxError):
+        pipeline_mod._refresh_and_backtest(loop_id, conn=None, refresh_start="2023-01-01")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
