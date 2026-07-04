@@ -12,11 +12,17 @@ from quantbench.api import run_reader
 from quantbench.api.run_manager import RunManager
 from quantbench.api.schemas import (
     ArtifactInfo,
+    AskPaperRequest,
+    AskPaperResponse,
     ExperimentRecordSchema,
     ForkRequest,
+    IngestPaperRequest,
     NewSessionResponse,
     NewRunRequest,
     NewRunResponse,
+    PaperDetail,
+    PaperSummary,
+    ReproducePaperRequest,
     RunDetail,
     RunSummary,
     SessionSchema,
@@ -345,3 +351,87 @@ def fork_run(run_id: str, payload: ForkRequest) -> NewRunResponse:
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="run not found") from None
     return NewRunResponse(run_id=forked_run_id, status="running")
+
+
+# --- Literature (GAP 4.3) -----------------------------------------------------
+
+
+def _paper_store():
+    from quantbench.literature.store import PaperStore
+
+    return PaperStore()
+
+
+@app.get("/api/literature", response_model=list[PaperSummary])
+def list_papers() -> list[PaperSummary]:
+    return [PaperSummary(**meta) for meta in _paper_store().list_papers()]
+
+
+@app.post("/api/literature/ingest", response_model=PaperSummary)
+def ingest_paper(payload: IngestPaperRequest) -> PaperSummary:
+    if not payload.source.strip():
+        raise HTTPException(status_code=400, detail="source must not be empty")
+    from quantbench.literature.ingest import ingest_and_store
+
+    try:
+        paper = ingest_and_store(payload.source.strip(), _paper_store())
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return PaperSummary(**paper.metadata_dict())
+
+
+@app.get("/api/literature/{paper_id}", response_model=PaperDetail)
+def get_paper(paper_id: str) -> PaperDetail:
+    try:
+        paper = _paper_store().load(paper_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="paper not found") from None
+    return PaperDetail(
+        **paper.metadata_dict(),
+        pages=[{"page_number": p.page_number, "text": p.text} for p in paper.pages],
+    )
+
+
+@app.get("/api/literature/{paper_id}/pdf")
+def get_paper_pdf(paper_id: str):
+    path = _paper_store().pdf_path(paper_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="pdf not found for this paper")
+    return FileResponse(path, media_type="application/pdf", filename=f"{paper_id}.pdf")
+
+
+@app.post("/api/literature/{paper_id}/ask", response_model=AskPaperResponse)
+def ask_paper(paper_id: str, payload: AskPaperRequest) -> AskPaperResponse:
+    if not payload.question.strip():
+        raise HTTPException(status_code=400, detail="question must not be empty")
+    try:
+        paper = _paper_store().load(paper_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="paper not found") from None
+
+    from quantbench.agent.llm import LLMClient
+    from quantbench.config import DEFAULT_MODEL
+    from quantbench.literature.qa import answer_selection_question
+
+    result = answer_selection_question(
+        LLMClient(DEFAULT_MODEL),
+        paper,
+        selection=payload.selection or "",
+        page=payload.page,
+        question=payload.question,
+    )
+    return AskPaperResponse(answer=result["answer"], grounded_page=result["grounded_page"])
+
+
+@app.post("/api/literature/{paper_id}/reproduce", response_model=NewRunResponse)
+def reproduce_paper(paper_id: str, payload: ReproducePaperRequest) -> NewRunResponse:
+    if not _paper_store().exists(paper_id):
+        raise HTTPException(status_code=404, detail="paper not found")
+    # A highlighted selection becomes the extraction 'focus'; an explicit request
+    # (or the selection text) becomes the run's human-readable request.
+    focus = payload.selection.strip() if payload.selection else None
+    request = payload.request.strip() if payload.request else None
+    run_id = _manager.submit_reproduce_paper(paper_id, request, focus)
+    return NewRunResponse(run_id=run_id, status="running")

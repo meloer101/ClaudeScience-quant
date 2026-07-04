@@ -90,7 +90,44 @@ class ExperimentRecordSchema(BaseModel):
     warning_count: int
     parent_run_id: str | None = None
     error_summary: str | None = None
+    literature_paper_id: str | None = None
+    literature_title: str | None = None
 
 
 class ForkRequest(BaseModel):
     modification: str
+
+
+class PaperSummary(BaseModel):
+    paper_id: str
+    title: str
+    authors: list[str] = []
+    source: str
+    source_kind: str
+    arxiv_id: str | None = None
+    n_pages: int
+
+
+class PaperDetail(PaperSummary):
+    pages: list[dict]
+
+
+class IngestPaperRequest(BaseModel):
+    source: str  # local PDF path or arXiv URL/id
+
+
+class AskPaperRequest(BaseModel):
+    selection: str
+    question: str
+    page: int | None = None
+
+
+class AskPaperResponse(BaseModel):
+    answer: str
+    grounded_page: int | None = None
+
+
+class ReproducePaperRequest(BaseModel):
+    request: str | None = None
+    selection: str | None = None
+    page: int | None = None

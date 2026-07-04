@@ -18,8 +18,10 @@ class PaperStore:
 
     Mirrors FactorStore's read/write conventions (JSON, mkdir on write)."""
 
-    def __init__(self, literature_dir: Path = LITERATURE_DIR) -> None:
-        self.literature_dir = Path(literature_dir)
+    def __init__(self, literature_dir: Path | None = None) -> None:
+        # Read the module global at call time (not as a default-arg binding) so
+        # tests can monkeypatch quantbench.literature.store.LITERATURE_DIR.
+        self.literature_dir = Path(literature_dir if literature_dir is not None else LITERATURE_DIR)
 
     def _paper_dir(self, paper_id: str) -> Path:
         return self.literature_dir / paper_id

@@ -130,6 +130,38 @@ class RunManager:
         self._executor.submit(self._run_task, run, event_queue, work)
         return run.run_id
 
+    def submit_reproduce_paper(self, paper_id: str, request: str | None = None, focus: str | None = None) -> str:
+        """Launch a literature reproduction run (GAP 4.3) in the background and
+        return its run_id immediately, mirroring submit()/fork(). The comparison
+        artifact is written by execute_from_paper before _STREAM_END, so a client
+        that waits for the stream to end always sees reproduction_comparison.json."""
+        run = self._store.create_run(f"Reproduce paper {paper_id}: {request or ''}".strip())
+        coordinator = Coordinator(run_store=self._store)
+        event_queue: queue.Queue = queue.Queue()
+        self._queues[run.run_id] = event_queue
+        self._cancel_events[run.run_id] = threading.Event()
+
+        def on_event(event: dict[str, Any]) -> None:
+            event_queue.put(event)
+
+        def work(cancel_event: threading.Event) -> None:
+            def staging_confirm(run_id: str, artifact: dict[str, Any], config: dict[str, Any]) -> dict[str, Any] | None:
+                return self._await_staging_confirmation(run_id, event_queue, cancel_event, artifact, config)
+
+            coordinator.execute_from_paper(
+                run,
+                paper_id,
+                request,
+                focus=focus,
+                on_event=on_event,
+                cancel_event=cancel_event,
+                staging_confirm=staging_confirm,
+            )
+            event_queue.put(_STREAM_END)
+
+        self._executor.submit(self._run_task, run, event_queue, work)
+        return run.run_id
+
     def fork(self, parent_run_id: str, modification: str) -> str:
         run = self._store.create_run(f"Fork {parent_run_id}: {modification}")
         coordinator = Coordinator()

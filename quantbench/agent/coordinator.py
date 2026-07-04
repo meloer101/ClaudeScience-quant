@@ -746,6 +746,29 @@ class Coordinator:
         skill_names: list[str] | None = None,
         paper_store: "PaperStore | None" = None,
     ) -> RunResult:
+        """Direct (non-conversational) entry point for `quantbench literature
+        reproduce`. Creates the Run, then delegates to execute_from_paper -
+        same run()/execute() split the rest of the coordinator uses, so the web
+        API (which needs the run_id before the work finishes) can create the
+        Run itself and call execute_from_paper directly."""
+        run = self.run_store.create_run(f"Reproduce paper {paper_id}: {request or ''}".strip())
+        return self.execute_from_paper(
+            run, paper_id, request, focus=focus, skill_names=skill_names, paper_store=paper_store
+        )
+
+    def execute_from_paper(
+        self,
+        run,
+        paper_id: str,
+        request: str | None = None,
+        *,
+        focus: str | None = None,
+        skill_names: list[str] | None = None,
+        paper_store: "PaperStore | None" = None,
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+        cancel_event: threading.Event | None = None,
+        staging_confirm: Callable[[str, dict[str, Any], dict[str, Any]], dict[str, Any] | None] | None = None,
+    ) -> RunResult:
         """Literature reproduction pipeline (GAP 4.3). Reads a paper with the
         Literature Agent (the 4th SubAgent), distills one factor, then runs the
         NORMAL QuantBench workflow via execute() with a seed prompt - exactly
@@ -793,7 +816,6 @@ class Coordinator:
             f"User request: {clean_request}"
         )
 
-        run = self.run_store.create_run(f"Reproduce paper {paper.paper_id}: {clean_request}")
         run.save_json("factor_extraction.json", extraction.to_dict())
         result = self.execute(
             run,
@@ -802,6 +824,9 @@ class Coordinator:
             prompt_override=seed_request,
             literature_source=lit_source,
             extra_llm_usage=extraction_usage,
+            on_event=on_event,
+            cancel_event=cancel_event,
+            staging_confirm=staging_confirm,
         )
 
         comparison = build_reproduction_comparison(extraction, result.metrics, literature_source=lit_source)
