@@ -10,6 +10,8 @@
 - Added a Sidebar **Customize** panel in the Web workspace (Skills and MCP tabs) to paste `mcpServers` JSON, add servers, toggle enablement, and test connections without touching files.
 - Added `quantbench mcp add/add-json/import/list/get/remove/enable/disable/migrate` and `quantbench skill enable/disable` CLI subcommands, aligned with `claude mcp` naming; `migrate` converts the legacy `mcp_servers.json` format.
 - Extended MCP transport support to `sse` and `streamable-http` in addition to `stdio`.
+- Shipped three key-free example MCP servers in the repo's project-scope `.mcp.json` (`fetch`, `sequential-thinking`, `time`), disabled by default so they add no first-run cost; enable any from the Customize panel or `quantbench mcp enable <name>`.
+- Disable lists (`disabledServers` / `disabledSkills`) now union across user and project scopes, and enabling a server/skill clears it from every scope — so a user can turn on a project-shipped default-disabled server from the Customize panel (user scope) and have it take effect.
 - Remote MCP connection tests now report a distinct `needs-authorization` state (surfaced in the Customize panel and `quantbench mcp test`) when a server answers with an auth challenge, instead of a generic failure. Automatic OAuth authorization-code flow is not yet implemented.
 
 ### Onboarding

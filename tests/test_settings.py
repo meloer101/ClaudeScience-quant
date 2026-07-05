@@ -14,7 +14,7 @@ def scoped_settings(tmp_path, monkeypatch):
     return user, project
 
 
-def test_load_settings_deep_merges_project_over_user(scoped_settings):
+def test_load_settings_unions_disable_lists_across_scopes(scoped_settings):
     from quantbench.settings import load_settings
 
     user, project = scoped_settings
@@ -26,8 +26,9 @@ def test_load_settings_deep_merges_project_over_user(scoped_settings):
 
     merged = load_settings()
 
-    # project overrides the mcp block wholesale, but the user-only skills block survives the merge.
-    assert merged["mcp"]["disabledServers"] == ["b"]
+    # Disable lists union across scopes (disabled if disabled at either), and the user-only skills
+    # block survives the merge.
+    assert sorted(merged["mcp"]["disabledServers"]) == ["a", "b"]
     assert merged["skills"]["disabledSkills"] == ["s1"]
 
 
@@ -63,6 +64,25 @@ def test_set_server_enabled_toggles_scoped_file_and_round_trips(scoped_settings)
     set_server_enabled("remote", True, scope="user")
     assert is_server_enabled("remote", load_settings())
     assert json.loads(user.read_text(encoding="utf-8"))["mcp"]["disabledServers"] == []
+
+
+def test_user_enable_overrides_project_default_disable(scoped_settings):
+    # Bundled example MCP servers ship disabled at project scope. A user turning one on from the
+    # Customize panel writes user scope, which must win. Enabling clears the name from every scope;
+    # then re-disabling at user scope must take effect again (union semantics).
+    from quantbench.settings import is_server_enabled, load_settings, set_server_enabled
+
+    user, project = scoped_settings
+    project.write_text(json.dumps({"mcp": {"disabledServers": ["fetch", "time"]}}), encoding="utf-8")
+
+    assert not is_server_enabled("fetch", load_settings())
+
+    set_server_enabled("fetch", True, scope="user")
+    assert is_server_enabled("fetch", load_settings())  # user enable overrides project disable
+    assert json.loads(project.read_text())["mcp"]["disabledServers"] == ["time"]  # cleared from project
+
+    set_server_enabled("fetch", False, scope="user")
+    assert not is_server_enabled("fetch", load_settings())  # re-disable at user scope still works
 
 
 def test_set_skill_enabled_writes_project_scope(scoped_settings):

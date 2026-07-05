@@ -40,11 +40,23 @@ def is_skill_enabled(name: str, settings: dict[str, Any] | None = None) -> bool:
 
 
 def set_server_enabled(name: str, enabled: bool, *, scope: str = "user") -> None:
-    _set_disabled_item(_settings_file_for_scope(scope), ("mcp", "disabledServers"), name, enabled)
+    _set_enabled(("mcp", "disabledServers"), name, enabled, scope)
 
 
 def set_skill_enabled(name: str, enabled: bool, *, scope: str = "user") -> None:
-    _set_disabled_item(_settings_file_for_scope(scope), ("skills", "disabledSkills"), name, enabled)
+    _set_enabled(("skills", "disabledSkills"), name, enabled, scope)
+
+
+def _set_enabled(keys: tuple[str, str], name: str, enabled: bool, scope: str) -> None:
+    if enabled:
+        # Enabling clears the name from EVERY scope's disable list, so an explicit "on" always
+        # wins - including for a project-shipped default-disabled example server that a user turns
+        # on from the Customize panel (which writes user scope). Without this, the project-scope
+        # disable would keep overriding the user-scope enable and the toggle would appear broken.
+        for path in SETTINGS_FILES:
+            _set_disabled_item(path, keys, name, True, create_missing=False)
+    else:
+        _set_disabled_item(_settings_file_for_scope(scope), keys, name, False)
 
 
 def _settings_file_for_scope(scope: str) -> Path:
@@ -55,7 +67,13 @@ def _settings_file_for_scope(scope: str) -> Path:
     raise ValueError("scope must be user or project")
 
 
-def _set_disabled_item(path: Path, keys: tuple[str, str], name: str, enabled: bool) -> None:
+def _set_disabled_item(
+    path: Path, keys: tuple[str, str], name: str, enabled: bool, *, create_missing: bool = True
+) -> None:
+    # When enabling (removing from the disable list), skip files that don't exist or don't list the
+    # name - there is nothing to clear, and we must not write spurious empty settings files.
+    if enabled and not create_missing and not path.exists():
+        return
     payload = _read_json_object(path)
     section = payload.setdefault(keys[0], {})
     if not isinstance(section, dict):
@@ -66,6 +84,8 @@ def _set_disabled_item(path: Path, keys: tuple[str, str], name: str, enabled: bo
         values = []
     disabled = {str(item) for item in values}
     if enabled:
+        if not create_missing and name not in disabled:
+            return
         disabled.discard(name)
     else:
         disabled.add(name)
@@ -95,6 +115,16 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
     for key, value in overlay.items():
         if isinstance(value, dict) and isinstance(result.get(key), dict):
             result[key] = _deep_merge(result[key], value)
+        elif isinstance(value, list) and isinstance(result.get(key), list):
+            # Lists in settings are the disable lists (mcp.disabledServers, skills.disabledSkills).
+            # Union them across scopes rather than replacing: a server/skill is disabled if disabled
+            # at ANY scope, so a project-shipped default-disable and a user-scope disable both take
+            # effect. Enabling clears the name from every scope (see _set_enabled).
+            merged_list = list(result[key])
+            for item in value:
+                if item not in merged_list:
+                    merged_list.append(item)
+            result[key] = merged_list
         else:
             result[key] = deepcopy(value)
     return result

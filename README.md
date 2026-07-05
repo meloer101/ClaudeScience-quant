@@ -193,6 +193,8 @@ uv run python -m quantbench skill enable reviewer-weak-triage
 
 配置文件位置：`~/.quantbench/mcp.json`（user 级）、`PROJECT_ROOT/.mcp.json`（project 级，project 覆盖 user）；启用/禁用状态单独存放在 `~/.quantbench/settings.json` / `PROJECT_ROOT/.quantbench/settings.json`，不写进可分享的 `.mcp.json`。Web 工作台 Sidebar 的 **Customize** 面板提供同等能力（粘贴 JSON、Add server 表单、Test connection、逐项开关）。
 
+仓库自带三个免 key 的示例 MCP server（见 [`.mcp.json`](.mcp.json)，均只暴露只读工具）：`fetch`（抓取网页/论文/数据文档）、`sequential-thinking`（结构化推理）、`time`（时区/时间）。它们**默认禁用**（`.quantbench/settings.json` 里列在 `disabledServers`），这样人人 clone 即得、但不会拖慢首次 run。想用哪个就在 Customize 面板打开、或 `quantbench mcp enable <name>`；首次启用时 `uvx`/`npx` 会冷下载一次对应包（需 Node.js 与 `uv`）。
+
 启动 API：
 
 ```bash
