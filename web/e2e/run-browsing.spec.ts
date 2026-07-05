@@ -7,7 +7,7 @@ import {
 } from "./fixtures";
 
 test("browsing a run end-to-end: sidebar -> detail -> warnings -> artifact", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
 
   // Scoped with hasText (checks innerText) rather than the role's accessible
   // name: the sidebar row's StatusDot contributes an aria-label ("completed")
@@ -31,7 +31,7 @@ test("browsing a run end-to-end: sidebar -> detail -> warnings -> artifact", asy
 });
 
 test("run list groups the seeded run under Today", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
 
   const todayGroup = page.getByText("Today", { exact: true });
   await expect(todayGroup).toBeVisible();

@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 
 const E2E_API_TOKEN = "playwright-test-token";
+const E2E_API_PORT = process.env.QUANTBENCH_E2E_API_PORT ?? "18000";
+const E2E_WEB_PORT = process.env.QUANTBENCH_E2E_WEB_PORT ?? "15173";
 const E2E_QUANTBENCH_HOME =
   process.env.QUANTBENCH_E2E_HOME ?? path.resolve(process.cwd(), "..", ".playwright-quantbench-home");
 process.env.QUANTBENCH_HOME = E2E_QUANTBENCH_HOME;
@@ -17,31 +19,32 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL: `http://localhost:${E2E_WEB_PORT}`,
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
     {
-      command: "uv run uvicorn quantbench.api.server:app --port 8000",
+      command: `uv run uvicorn quantbench.api.server:app --port ${E2E_API_PORT}`,
       cwd: "..",
       env: {
         ...process.env,
         QUANTBENCH_HOME: E2E_QUANTBENCH_HOME,
         QUANTBENCH_API_TOKEN: E2E_API_TOKEN,
+        QUANTBENCH_ALLOWED_ORIGINS: `http://localhost:${E2E_WEB_PORT},http://127.0.0.1:${E2E_WEB_PORT}`,
       },
-      url: `http://localhost:8000/api/runs?token=${E2E_API_TOKEN}`,
+      url: `http://localhost:${E2E_API_PORT}/api/runs?token=${E2E_API_TOKEN}`,
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
     },
     {
-      command: "npm run dev",
+      command: `npm run dev -- --port ${E2E_WEB_PORT}`,
       env: {
         ...process.env,
-        VITE_QUANTBENCH_API_BASE: "http://localhost:8000/api",
+        VITE_QUANTBENCH_API_BASE: `http://localhost:${E2E_API_PORT}/api`,
         VITE_QUANTBENCH_API_TOKEN: E2E_API_TOKEN,
       },
-      url: "http://localhost:5173",
+      url: `http://localhost:${E2E_WEB_PORT}`,
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
     },
