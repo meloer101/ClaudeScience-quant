@@ -32,6 +32,7 @@ export default defineConfig({
         QUANTBENCH_HOME: E2E_QUANTBENCH_HOME,
         QUANTBENCH_API_TOKEN: E2E_API_TOKEN,
         QUANTBENCH_ALLOWED_ORIGINS: `http://localhost:${E2E_WEB_PORT},http://127.0.0.1:${E2E_WEB_PORT}`,
+        DEEPSEEK_API_KEY: "playwright-dummy-key",
       },
       url: `http://localhost:${E2E_API_PORT}/api/runs?token=${E2E_API_TOKEN}`,
       reuseExistingServer: !process.env.CI,
