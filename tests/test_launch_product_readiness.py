@@ -92,16 +92,32 @@ def test_run_devserver_skips_install_when_deps_present(tmp_path, monkeypatch):
     assert code == 0
 
 
-def test_seed_example_runs_writes_browsable_artifacts(tmp_path):
-    from quantbench.examples import EXAMPLE_RUN_ID, seed_example_runs
+def test_seed_example_runs_restores_bundled_sessions(tmp_path):
+    from quantbench.examples import example_index, seed_example_runs
+
+    examples = example_index()
+    assert len(examples) >= 1  # the shipped bundle has example sessions
 
     result = seed_example_runs(tmp_path)
-    run_dir = tmp_path / EXAMPLE_RUN_ID
 
-    assert result["created"] == 1
-    assert (run_dir / "manifest.json").exists()
-    assert (run_dir / "review_report.json").exists()
-    assert "not investment advice" in (run_dir / "research_note.md").read_text(encoding="utf-8").lower()
+    assert result["created"] == len(examples)
+    for example in examples:
+        run_dir = tmp_path / example["run_id"]
+        session_file = tmp_path / "_sessions" / f"{example['session_id']}.json"
+        assert (run_dir / "manifest.json").exists()
+        assert (run_dir / "review_report.json").exists()
+        assert (run_dir / "research_note.md").exists()
+        assert session_file.exists()
+
+
+def test_seed_example_runs_is_idempotent(tmp_path):
+    from quantbench.examples import seed_example_runs
+
+    first = seed_example_runs(tmp_path)
+    assert first["created"] >= 1
+
+    second = seed_example_runs(tmp_path)
+    assert second["created"] == 0  # nothing re-copied on a second call
 
 
 def test_cost_estimate_is_deterministic_and_positive():

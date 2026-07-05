@@ -1,0 +1,97 @@
+name: sp500
+as_of_date: '2024-12-31'
+symbols:
+- A
+- AAPL
+- ABBV
+- ABNB
+- ABT
+- ACGL
+- ACN
+- ADBE
+- ADI
+- ADM
+- ADP
+- ADSK
+- AEE
+- AEP
+- AES
+- AFL
+- AIG
+- AIZ
+- AJG
+- AKAM
+- ALB
+- ALGN
+- ALL
+- ALLE
+- AMAT
+- AMCR
+- AMD
+- AME
+- AMGN
+- AMP
+- AMT
+- AMZN
+- ANET
+- AON
+- AOS
+- APA
+- APD
+- APH
+- APO
+- APP
+point_in_time: false
+survivorship_bias_note: 'This universe uses the current S&P 500 constituents across
+  the requested history. It is not point-in-time and therefore has survivorship bias:
+  companies removed from the index before the as-of date are absent from the historical
+  backtest sample. This universe was truncated to a 40-symbol sample of the full S&P
+  500 (alphabetically first 40 tickers), for a quick/cheap test run. It is NOT representative
+  of the full index and results must not be interpreted as an S&P 500-wide finding.'
+source: https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
+sample_limit: 40
+asset_class: equity
+membership_intervals: null
+covers_delisted: false
+metadata:
+  gics_sector:
+    AOS: Industrials
+    ABT: Health Care
+    ABBV: Health Care
+    ACN: Information Technology
+    ADBE: Information Technology
+    AMD: Information Technology
+    AES: Utilities
+    AFL: Financials
+    A: Health Care
+    APD: Materials
+    ABNB: Consumer Discretionary
+    AKAM: Information Technology
+    ALB: Materials
+    ALGN: Health Care
+    ALLE: Industrials
+    ALL: Financials
+    AMZN: Consumer Discretionary
+    AMCR: Materials
+    AEE: Utilities
+    AEP: Utilities
+    AIG: Financials
+    AMT: Real Estate
+    AMP: Financials
+    AME: Industrials
+    AMGN: Health Care
+    APH: Information Technology
+    ADI: Information Technology
+    AON: Financials
+    APA: Energy
+    APO: Financials
+    AAPL: Information Technology
+    AMAT: Information Technology
+    APP: Information Technology
+    ACGL: Financials
+    ADM: Consumer Staples
+    ANET: Information Technology
+    AJG: Financials
+    AIZ: Financials
+    ADSK: Information Technology
+    ADP: Industrials

@@ -1,0 +1,58 @@
+hypothesis: 测试50日与200日均线交叉的趋势跟踪策略在QQQ上的表现，2015-01-01到2024-12-31，金叉做多、死叉空仓
+model: deepseek/deepseek-chat
+critic_model: deepseek/deepseek-chat
+data_path: /Users/m/.quantbench/data_cache/yfinance_equity_QQQ_1d_f0c6635e1ac62ea2.parquet
+cache:
+  cache_hit: false
+  symbol: QQQ
+  timeframe: 1d
+  start: '2015-01-01'
+  end: '2024-12-31'
+  path: /Users/m/.quantbench/data_cache/yfinance_equity_QQQ_1d_f0c6635e1ac62ea2.parquet
+  content_hash: 45bd29a1fb64c3d1ed5f2298a13e4f1cc101af911b5fed6bb8ea3001d8cf8289
+  rows: 2515
+  provider: yfinance_equity
+  source: yfinance
+  adjustment: &id001
+    method: raw
+    dividend_reinvested: false
+  fallback_reason: null
+  covers_delisted: false
+data_slices:
+- symbol: QQQ
+  timeframe: 1d
+  start: '2015-01-01'
+  end: '2024-12-31'
+  path: /Users/m/.quantbench/data_cache/yfinance_equity_QQQ_1d_f0c6635e1ac62ea2.parquet
+  content_hash: 45bd29a1fb64c3d1ed5f2298a13e4f1cc101af911b5fed6bb8ea3001d8cf8289
+  rows: 2515
+  provider: yfinance_equity
+  source: yfinance
+  adjustment: *id001
+  fallback_reason: null
+funding: null
+universe: null
+execution:
+  signal_time: close_t
+  fill_price: open_t+1
+cost_model: fixed_bps
+borrow_model: not_applied
+neutralize: []
+capacity_curve: []
+long_short_contribution: {}
+neutralization_comparison: {}
+fetch_params:
+  symbol: QQQ
+  timeframe: 1d
+  start: '2015-01-01'
+  end: '2024-12-31'
+parent_run_id: null
+derived_from_factor: null
+injected_skills: []
+factor_metadata:
+  lookback_bars: 200
+  lookback_source: inferred
+session_id: session_20260705_115056_6ea3
+turn_index: 0
+applied_memory_defaults: []
+literature_source: null

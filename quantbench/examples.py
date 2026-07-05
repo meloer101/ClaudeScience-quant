@@ -1,52 +1,62 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import shutil
 from pathlib import Path
+from typing import Any
 
 from quantbench.config import RUNS_DIR
 
+# Pre-generated example sessions shipped with the package. These are real research runs (natural
+# language request -> universe -> backtest -> Reviewer + Critic -> artifacts), captured once and
+# frozen here. On first open, seed_example_runs restores them into the user's runs dir so the
+# sidebar shows a ready "example project" of genuine conversations to explore and continue.
+BUNDLE_DIR = Path(__file__).resolve().parent / "data" / "seeds" / "examples"
 
-EXAMPLE_RUN_ID = "run_20260704_000000_example"
+
+def example_index() -> list[dict[str, Any]]:
+    index_path = BUNDLE_DIR / "index.json"
+    if not index_path.exists():
+        return []
+    payload = json.loads(index_path.read_text(encoding="utf-8"))
+    examples = payload.get("examples", [])
+    return examples if isinstance(examples, list) else []
 
 
-def seed_example_runs(runs_dir: Path = RUNS_DIR) -> dict[str, int | list[str]]:
+def seed_example_runs(runs_dir: Path = RUNS_DIR) -> dict[str, Any]:
+    """Restore the bundled example sessions into runs_dir, skipping any already present.
+
+    Idempotent: re-running only copies examples the user does not already have, so it is safe to
+    call on every startup.
+    """
+
+    runs_dir = Path(runs_dir)
     runs_dir.mkdir(parents=True, exist_ok=True)
-    run_dir = runs_dir / EXAMPLE_RUN_ID
-    created = 0
-    if not run_dir.exists():
-        run_dir.mkdir()
-        created = 1
-    manifest = {
-        "run_id": EXAMPLE_RUN_ID,
-        "user_request": "Example: crypto cross-sectional momentum research run",
-        "created_at": datetime(2026, 7, 4, tzinfo=timezone.utc).isoformat(),
-        "summary": "Seeded example run for first-time UI exploration.",
-        "metrics": {"sharpe": 1.12, "annual_return": 0.21, "max_drawdown": -0.18},
-        "warnings": [
-            "Example data is deterministic and for UI/review workflow exploration only.",
-            "Research artifact only; not investment advice.",
-        ],
-        "review": {
-            "verdict": "PROMISING",
-            "findings": [
-                {
-                    "check": "launch_trust_policy",
-                    "severity": "warning",
-                    "message": "Crypto universe is launch-limited and snapshot-derived.",
-                    "detail": {"tier": "crypto_pit_snapshot_limited"},
-                }
-            ],
-        },
+    sessions_dir = runs_dir / "_sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+
+    created_runs: list[str] = []
+    created_sessions: list[str] = []
+    for example in example_index():
+        run_id = example.get("run_id")
+        session_id = example.get("session_id")
+
+        if run_id:
+            src_run = BUNDLE_DIR / "runs" / run_id
+            dst_run = runs_dir / run_id
+            if src_run.is_dir() and not dst_run.exists():
+                shutil.copytree(src_run, dst_run)
+                created_runs.append(run_id)
+
+        if session_id:
+            src_session = BUNDLE_DIR / "_sessions" / f"{session_id}.json"
+            dst_session = sessions_dir / f"{session_id}.json"
+            if src_session.exists() and not dst_session.exists():
+                shutil.copy2(src_session, dst_session)
+                created_sessions.append(session_id)
+
+    return {
+        "created": len(created_runs),
+        "run_ids": created_runs,
+        "session_ids": created_sessions,
     }
-    (run_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    (run_dir / "research_note.md").write_text(
-        "# Seeded Research Note\n\nResearch artifact only. Not investment advice.\n",
-        encoding="utf-8",
-    )
-    (run_dir / "review_report.json").write_text(json.dumps(manifest["review"], indent=2), encoding="utf-8")
-    (run_dir / "backtest_result.json").write_text(
-        json.dumps({"metrics": manifest["metrics"], "series": {"timestamp": [], "equity": []}}, indent=2),
-        encoding="utf-8",
-    )
-    return {"created": created, "run_ids": [EXAMPLE_RUN_ID]}

@@ -15,6 +15,7 @@
 ### Onboarding
 
 - `quantbench serve` now preflights `uv`/`node`/`npm` and prints an actionable install hint when one is missing, and automatically runs `npm install` on first run when `web/node_modules` is absent — so a fresh clone starts with a single command instead of failing on a missing web build.
+- `quantbench examples seed` now restores four real, pre-generated example research sessions (equity cross-sectional momentum, beta/sector-neutralized low-volatility, single-asset RSI mean-reversion, single-asset moving-average trend) instead of one placeholder run. Each is a genuine run with its full artifacts and Reviewer/Critic reports, so a first-time user opens the workspace to a ready set of conversations to explore. Seeding is idempotent.
 
 ## 0.1.0 - 2026-07-04
 

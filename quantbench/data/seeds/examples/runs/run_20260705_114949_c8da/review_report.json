@@ -1,0 +1,270 @@
+{
+  "verdict": "WEAK",
+  "verdict_reason": "4 warning finding(s) indicate weak robustness.",
+  "findings": [
+    {
+      "check": "launch_trust_policy",
+      "severity": "warning",
+      "message": "Universe uses a current snapshot across history and remains survivorship-biased. It is also limited to 40 symbols.",
+      "detail": {
+        "tier": "current_snapshot_survivorship_biased",
+        "asset_class": "equity",
+        "point_in_time": false,
+        "covers_delisted": false,
+        "sample_limit": 40,
+        "source": "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+      }
+    },
+    {
+      "check": "lookahead",
+      "severity": "pass",
+      "message": "No known lookahead patterns detected.",
+      "detail": {}
+    },
+    {
+      "check": "out_of_sample",
+      "severity": "pass",
+      "message": "Out-of-sample decay check did not flag material degradation.",
+      "detail": {
+        "train_metrics": {
+          "sharpe": -0.475655,
+          "annual_return": -0.151937,
+          "max_drawdown": -0.451633,
+          "turnover_annual": 17.125052,
+          "ic_mean": -0.015402,
+          "rank_ic_mean": -0.013165,
+          "monotonicity_score": 1.0,
+          "symbols": 40,
+          "observations": 25570,
+          "funding_cost_total": 0.0,
+          "borrow_cost_total": 0.0,
+          "liquidity_cost_total": 0.0,
+          "sharpe_before_funding": -0.443952
+        },
+        "test_metrics": {
+          "sharpe": 0.353995,
+          "annual_return": 0.053736,
+          "max_drawdown": -0.152463,
+          "turnover_annual": 20.762298,
+          "ic_mean": -0.009827,
+          "rank_ic_mean": 0.011665,
+          "monotonicity_score": 0.5,
+          "symbols": 40,
+          "observations": 9640,
+          "funding_cost_total": 0.0,
+          "borrow_cost_total": 0.0,
+          "liquidity_cost_total": 0.0,
+          "sharpe_before_funding": 0.403192
+        },
+        "train_observations": 28010,
+        "test_observations": 12080,
+        "sharpe_decay_ratio": null
+      }
+    },
+    {
+      "check": "cost_sensitivity",
+      "severity": "warning",
+      "message": "Sharpe is non-positive under 2x assumed trading costs.",
+      "detail": {
+        "sharpe_by_multiplier": {
+          "1.0": -0.207425,
+          "1.5": -0.272379,
+          "2.0": -0.337314
+        }
+      }
+    },
+    {
+      "check": "parameter_stability",
+      "severity": "pass",
+      "message": "Parameter perturbation did not breach the instability threshold.",
+      "detail": {
+        "sharpe_by_perturbation": {
+          "base": -0.34389,
+          "-20%": -0.229864,
+          "+20%": -0.241572
+        },
+        "sharpe_spread": 0.11402599999999996,
+        "skipped": []
+      }
+    },
+    {
+      "check": "deflated_sharpe",
+      "severity": "info",
+      "message": "Single-trial run; multiple-testing deflation not applied.",
+      "detail": {
+        "observed_sharpe": -0.207425,
+        "deflated_sharpe": 0.343944,
+        "expected_max_sharpe": 0.0,
+        "n_trials": 1,
+        "sharpe_std_across_trials": 0.032546,
+        "n_observations": 943,
+        "skew": -0.176694,
+        "kurtosis": 3.962454,
+        "is_significant": false
+      }
+    },
+    {
+      "check": "walk_forward",
+      "severity": "pass",
+      "message": "Walk-forward OOS windows did not breach warning thresholds.",
+      "detail": {
+        "window_test_sharpes": [
+          -1.474463,
+          0.560512,
+          0.666824,
+          -0.318335
+        ],
+        "median_test_sharpe": 0.121089,
+        "iqr_test_sharpe": 1.194457,
+        "positive_window_share": 0.5,
+        "n_windows": 4
+      }
+    },
+    {
+      "check": "cpcv",
+      "severity": "warning",
+      "message": "Most purged CPCV OOS paths have non-positive Sharpe.",
+      "detail": {
+        "path_test_sharpes": [
+          -0.465809,
+          -0.098142,
+          -1.030441,
+          -1.16538,
+          -0.147186,
+          -0.750555,
+          -0.939675,
+          0.12782,
+          -0.275998,
+          -0.681769,
+          0.430007,
+          -0.011751,
+          -0.238955,
+          0.802164,
+          0.391056,
+          -0.199224,
+          0.203984,
+          -0.198596,
+          -0.122775,
+          0.675891
+        ],
+        "median_test_sharpe": -0.172891,
+        "iqr_test_sharpe": 0.66666,
+        "p05_test_sharpe": -1.037188,
+        "positive_path_share": 0.3,
+        "n_paths": 20,
+        "n_groups": 6,
+        "purge_bars": 60,
+        "embargo_bars": 10,
+        "lookback_bars": 60,
+        "lookback_source": "inferred"
+      }
+    },
+    {
+      "check": "ic_significance",
+      "severity": "warning",
+      "message": "Rank IC is not statistically significant after Newey-West correction.",
+      "detail": {
+        "ic_mean": 0.002314,
+        "ic_std": 0.167758,
+        "t_stat": 0.417707,
+        "p_value": 0.676161,
+        "n_periods": 943,
+        "nw_lags": 6,
+        "is_significant": false
+      }
+    },
+    {
+      "check": "regime",
+      "severity": "pass",
+      "message": "No single calendar year dominates return contribution.",
+      "detail": {
+        "yearly_contribution": {
+          "2021": -0.5119668646558966,
+          "2022": 0.31923188135290287,
+          "2023": -0.019033078632596487,
+          "2024": -0.14976817535860407
+        },
+        "max_year": 2021,
+        "max_abs_contribution": 0.5119668646558966
+      }
+    },
+    {
+      "check": "tail_dependence",
+      "severity": "pass",
+      "message": "Positive return is not concentrated in the best 5% of days.",
+      "detail": {
+        "best_days_positive_return_share": 0.13915477135274829
+      }
+    },
+    {
+      "check": "turnover",
+      "severity": "pass",
+      "message": "Annualized turnover is below the reviewer warning threshold.",
+      "detail": {
+        "turnover_annual": 31.294915
+      }
+    },
+    {
+      "check": "beta_exposure",
+      "severity": "pass",
+      "message": "Benchmark beta exposure did not breach warning thresholds.",
+      "detail": {
+        "beta": 0.0023713504362018836,
+        "r_squared": 1.0660888586033757e-05,
+        "observations": 943,
+        "benchmark_symbol": "SPY"
+      }
+    },
+    {
+      "check": "symbol_concentration",
+      "severity": "pass",
+      "message": "Symbol-level contribution concentration is below the warning threshold.",
+      "detail": {
+        "top_5_abs_contribution_share": 0.41414089240034385,
+        "top_symbols": {
+          "APP": -0.16061350913055944,
+          "APO": 0.09073301198102983,
+          "AMP": 0.08136018988034824,
+          "ALGN": -0.07607259148990751,
+          "ABBV": -0.05113432548916222
+        }
+      }
+    },
+    {
+      "check": "execution_sensitivity",
+      "severity": "pass",
+      "message": "Sharpe changed from -0.859 using close_t fills to -0.207 using open_t+1 fills (decay -0.651).",
+      "detail": {
+        "close_t_sharpe": -0.85854,
+        "open_t+1_sharpe": -0.207425
+      }
+    },
+    {
+      "check": "capacity",
+      "severity": "info",
+      "message": "Liquidity capacity was not estimated for this run.",
+      "detail": {
+        "capacity_curve": []
+      }
+    },
+    {
+      "check": "short_dependency",
+      "severity": "pass",
+      "message": "Short-leg contribution is below the dependency warning threshold.",
+      "detail": {
+        "long_contribution": 0.342098,
+        "short_contribution": -0.377045,
+        "short_share": 0.524298
+      }
+    },
+    {
+      "check": "execution_assumption",
+      "severity": "pass",
+      "message": "Backtest uses next-open fills after close_t signal formation.",
+      "detail": {
+        "fill_price": "open_t+1",
+        "signal_time": "close_t"
+      }
+    }
+  ]
+}

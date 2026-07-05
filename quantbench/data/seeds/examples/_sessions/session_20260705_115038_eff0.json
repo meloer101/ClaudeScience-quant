@@ -1,0 +1,23 @@
+{
+  "session_id": "session_20260705_115038_eff0",
+  "created_at": "2026-07-05T11:50:38.448400+00:00",
+  "turns": [
+    {
+      "turn_index": 0,
+      "user_message": "测试14日RSI均值回归策略在SPY上的表现，2019-01-01到2024-12-31，RSI低于30做多、高于70做空",
+      "run_id": "run_20260705_115038_6d3c",
+      "summary": {
+        "hypothesis": "测试14日RSI均值回归策略在SPY上的表现，2019-01-01到2024-12-31，RSI低于30做多、高于70做空",
+        "verdict": "WEAK",
+        "key_metrics": {
+          "sharpe": -0.447637,
+          "annual_return": -0.069629,
+          "max_drawdown": -0.384427,
+          "turnover_annual": 0.166746,
+          "ic_mean": -0.046031
+        },
+        "run_id": "run_20260705_115038_6d3c"
+      }
+    }
+  ]
+}

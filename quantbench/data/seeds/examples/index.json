@@ -1,0 +1,28 @@
+{
+  "examples": [
+    {
+      "session_id": "session_20260705_114906_eca5",
+      "run_id": "run_20260705_114906_9839",
+      "title": "美股截面动量 · 20日",
+      "description": "S&P 500 样本上的经典 20 日动量截面多空。Sharpe 看着不错(1.11)，但 Reviewer 指出截面 IC 经 Newey-West 校正后并不显著、且收益集中——一个「看着好、其实证据不足」的诚实案例。"
+    },
+    {
+      "session_id": "session_20260705_114949_cd3f",
+      "run_id": "run_20260705_114949_c8da",
+      "title": "低波动因子 · beta/行业中性化",
+      "description": "对 beta 与行业做中性化后的低波动截面因子，展示完整的中性化与风险归因链路。Reviewer 判定 WEAK。"
+    },
+    {
+      "session_id": "session_20260705_115038_eff0",
+      "run_id": "run_20260705_115038_6d3c",
+      "title": "单标的均值回归 · RSI(14)",
+      "description": "SPY 上的 RSI 反转策略，单标的向量化回测。朴素反转规则在严格审查下不成立。"
+    },
+    {
+      "session_id": "session_20260705_115056_6ea3",
+      "run_id": "run_20260705_115056_39d3",
+      "title": "单标的趋势跟踪 · 均线交叉",
+      "description": "QQQ 上的 50/200 日均线趋势跟踪，经典趋势策略的真实回测与审查。"
+    }
+  ]
+}

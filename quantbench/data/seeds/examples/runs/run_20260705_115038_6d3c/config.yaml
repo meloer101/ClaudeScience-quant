@@ -1,0 +1,58 @@
+hypothesis: 测试14日RSI均值回归策略在SPY上的表现，2019-01-01到2024-12-31，RSI低于30做多、高于70做空
+model: deepseek/deepseek-chat
+critic_model: deepseek/deepseek-chat
+data_path: /Users/m/.quantbench/data_cache/yfinance_equity_SPY_1d_da071f93e2e4850d.parquet
+cache:
+  cache_hit: true
+  symbol: SPY
+  timeframe: 1d
+  start: '2019-01-01'
+  end: '2024-12-31'
+  path: /Users/m/.quantbench/data_cache/yfinance_equity_SPY_1d_da071f93e2e4850d.parquet
+  content_hash: 330c6e6d3396b1da28b06dea27e724e2a33f122a515ab80f5cf36b3a7cbdf9ee
+  rows: 1509
+  provider: yfinance_equity
+  source: yfinance
+  adjustment: &id001
+    method: raw
+    dividend_reinvested: false
+  fallback_reason: null
+  covers_delisted: false
+data_slices:
+- symbol: SPY
+  timeframe: 1d
+  start: '2019-01-01'
+  end: '2024-12-31'
+  path: /Users/m/.quantbench/data_cache/yfinance_equity_SPY_1d_da071f93e2e4850d.parquet
+  content_hash: 330c6e6d3396b1da28b06dea27e724e2a33f122a515ab80f5cf36b3a7cbdf9ee
+  rows: 1509
+  provider: yfinance_equity
+  source: yfinance
+  adjustment: *id001
+  fallback_reason: null
+funding: null
+universe: null
+execution:
+  signal_time: close_t
+  fill_price: open_t+1
+cost_model: fixed_bps
+borrow_model: not_applied
+neutralize: []
+capacity_curve: []
+long_short_contribution: {}
+neutralization_comparison: {}
+fetch_params:
+  symbol: SPY
+  timeframe: 1d
+  start: '2019-01-01'
+  end: '2024-12-31'
+parent_run_id: null
+derived_from_factor: null
+injected_skills: []
+factor_metadata:
+  lookback_bars: 14
+  lookback_source: inferred
+session_id: session_20260705_115038_eff0
+turn_index: 0
+applied_memory_defaults: []
+literature_source: null

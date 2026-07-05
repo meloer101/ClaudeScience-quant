@@ -98,7 +98,12 @@ def _examples(args: tuple[str, ...]) -> None:
     from quantbench.examples import seed_example_runs
 
     result = seed_example_runs()
-    click.echo(f"Seeded {result['created']} example run(s): {', '.join(result['run_ids'])}")
+    if result["created"]:
+        click.echo(
+            f"Seeded {result['created']} example session(s): {', '.join(result['session_ids'])}"
+        )
+    else:
+        click.echo("Example sessions already present; nothing to seed.")
 
 
 def _library_list(args: tuple[str, ...]) -> None:

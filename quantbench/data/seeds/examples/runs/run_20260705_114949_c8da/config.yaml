@@ -1,0 +1,704 @@
+hypothesis: 在标普500里选取40只股票样本，测试低波动因子（过去60日日收益率标准差取负）的截面表现，2021-01-01到2024-12-31，等权五分位多空组合，并对beta和行业做中性化
+model: deepseek/deepseek-chat
+critic_model: deepseek/deepseek-chat
+data_path: /Users/m/.quantbench/runs/run_20260705_114949_c8da/panel.parquet
+cache:
+  symbols_requested: 40
+  symbols_fetched: 40
+  cache_hits: 40
+  failed: {}
+  sources:
+    yfinance: 40
+  data_slices: &id001
+  - symbol: A
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_A_1d_c2b5a1de6b5d498c.parquet
+    content_hash: 79843925bec787a2e1e5935e8002ac54a84e45f84c1b4b513c142e566f748888
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AAPL
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AAPL_1d_22c7937917d6633a.parquet
+    content_hash: 27dddaa7cf117ce97c83dfd8af4e8e0438deb7086a37e5425cc72ca863e31eb8
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ABBV
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ABBV_1d_48eddccc861b5aca.parquet
+    content_hash: 67d82e419e87a401665e848e9270a8cb9559a38987d1dbedf29bd41b9cfbb9e1
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ABNB
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ABNB_1d_d4909e66e4b692b6.parquet
+    content_hash: 36b10a1fed9dee88d2952ff489250fb30f1d0182c2b17ebc9f183fc251deb453
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ABT
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ABT_1d_193fe83743c3f15f.parquet
+    content_hash: f037111168b6a5dbe4b3575db65dbd2131bf19954f904263c8ed60d7ed9a7aa1
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ACGL
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ACGL_1d_7986293e8a2e1606.parquet
+    content_hash: 238f9ebed2f592936fc627539a5cec20ef28321f4a8e434fea0de2e8f39ca359
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ACN
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ACN_1d_874f81620756b52b.parquet
+    content_hash: ebbd577bf19738bdf0c475008e127f81d9c0ef1fa0eac25bee1a14edde8e1542
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ADBE
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ADBE_1d_0179ed11cf047c77.parquet
+    content_hash: 8d2304575558da5bdf3c82468d6baf6f453470f5e4dcbd8e3e3dc5dd75ab25ca
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ADI
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ADI_1d_7e0b5a229e8025c6.parquet
+    content_hash: 80ed4ee3cf3d25c59b4dfad46ecef08a6b9aa7242ed26e1c299ef3af3eb18ffd
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ADM
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ADM_1d_96b438bdbd420e1d.parquet
+    content_hash: 24cc3e3f6112a2aff520264cc4c471c42b3af95200b454d9ef46545ebf84db94
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ADP
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ADP_1d_edab4271d5dee614.parquet
+    content_hash: 63ab31176d65ce3a1f3ae54da23d37256a9360bde2bd7a9312dbc4d1a71e6e65
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ADSK
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ADSK_1d_2093df5a37b847ca.parquet
+    content_hash: 3ee651864d112ccbe6d0bc6e1a552c4b709fec7af17aa592cca9ea8f1e6b7e0e
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AEE
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AEE_1d_afca09a9ccc20d2d.parquet
+    content_hash: 163298b9008f69985823fd68ed5adba9916d9db77b349593d757a5da322ee81a
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AEP
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AEP_1d_39222293b5bdbb35.parquet
+    content_hash: 522aeea4c0ea4b590baa06436dde624c157eba0f24b064a6b8b99209d6f4fbbf
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AES
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AES_1d_23755f8a27740815.parquet
+    content_hash: cd7c55549dba3f79964c1ff32a79b1b923c5d35d1008fca4f41ce1c6890f868e
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AFL
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AFL_1d_3d559997428c6a93.parquet
+    content_hash: d88f878e5946338f499ba422ad4569e765f74d9f05103a74d545c6735a10b0b9
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AIG
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AIG_1d_3b5d1cc523814901.parquet
+    content_hash: 624fbed93bee704bc8253dfd6d46667024bf928ef63bc04c53b9abf27fff9633
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AIZ
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AIZ_1d_789e46a8f9fc49a1.parquet
+    content_hash: 93c52b5328a61dba7ffa4c716b408d2cf64134b2754cb11268c555e552ba2e98
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AJG
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AJG_1d_18c7cc109ff33eb6.parquet
+    content_hash: bb64b1d4b8e1b6f777781999eefdb67d53ed5b28b8d2a1ca3f497ad74a140fa5
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AKAM
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AKAM_1d_48c962d0dd7dc4a4.parquet
+    content_hash: af9f4db7722ecf14935597b6b9464db7e48338f3b59c5d1271677ed21dc3dfd0
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ALB
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ALB_1d_daf570a914e234b8.parquet
+    content_hash: 764ee6e4ea744d9da97d1da3b15c05186f2fdee412572936e8ebedb3b276856e
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ALGN
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ALGN_1d_ee23e72fd20112e3.parquet
+    content_hash: 49a455c0a593a4be2c2935fa283c938a27ca3c31ea34f31f890fe31abf960171
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ALL
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ALL_1d_cf58ad5793f081ec.parquet
+    content_hash: 46be5779fff2d016b006c98815e455fc59e54ac03e8e8d91886279fd47ceac64
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ALLE
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ALLE_1d_7d415a8fe4e1652d.parquet
+    content_hash: 278044f9958b5484abb36a3e1e07967c474f8fb6b5e8936afab07b8462b71c49
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AMAT
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AMAT_1d_8700a2b129a9b95a.parquet
+    content_hash: 8498fcf41671b4319b4fa84ffaef4f190388362256b75ca60264ec715a6e196c
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AMCR
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AMCR_1d_8a091722b128f06a.parquet
+    content_hash: 18dbd91ac9611397b3d24eac45fc841763e1eae75d08bf252d6b7425309200fc
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AMD
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AMD_1d_8a9a653e6e7759b8.parquet
+    content_hash: 8e39e77af438ed72c270b3ba4a630c8a20ca6ab36fc3ff5a0880f3c78a73138b
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AME
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AME_1d_6a2a83f5c1706760.parquet
+    content_hash: 16d7c6f0464151c626cc8dcb1c8bd5dbfd99e1ed66dc016cf764e1e0a3bd5764
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AMGN
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AMGN_1d_931b599372e811b3.parquet
+    content_hash: c8b10fc95f2586df22e6a0056f8ce49a19c40b75670b1be9f226741e9df4e0c2
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AMP
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AMP_1d_55b9a5577ae5e296.parquet
+    content_hash: a2c1492593e25a4aaa1ae0636f4c160e6afe9ff48a71e2a7967e76ba3962d028
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AMT
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AMT_1d_7f303c2c132762aa.parquet
+    content_hash: 64360d17128e8f026842ed386f673c2bcd6c82e1e13d7d21d20505c206acb11a
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AMZN
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AMZN_1d_b73129c18a2e691b.parquet
+    content_hash: 62758b8733d967489ef8c023bb0432c5300f905a6fd54ff6fe09ad5861f46d6a
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: ANET
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_ANET_1d_7917cf8c1fa74645.parquet
+    content_hash: 978e540bebc85b7d8bc71ba62d85a8a953f80300c9c4ddf682613cd9367da69f
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AON
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AON_1d_0c088fc25934ae28.parquet
+    content_hash: a056e68079d3cc80335bf7a8de83003fed2d49485decb09739ee415f5f2e772f
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: AOS
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_AOS_1d_1152a831a5a6a0cb.parquet
+    content_hash: f11ad49d133bf1308e3ead1dc3a9973b30b5eff58ffefdd608e44df49b3c9f13
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: APA
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_APA_1d_9a7e37b5fcc4022e.parquet
+    content_hash: 7efbf3768f821d659d66a440e3cc13ed90d7098fdbeb356716a95e87a85b7186
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: APD
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_APD_1d_73a2b46824cb1dcf.parquet
+    content_hash: 72b204d95c90eb4aa88204805e0856b7a52e92d111a53a6f2b410a1191eeac41
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: APH
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_APH_1d_dc255cee9d01b1f3.parquet
+    content_hash: 150ae3ed3b395f402c54ae61f98215faf02bf4065c389143eb3b23543f87cb08
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: APO
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_APO_1d_1c05d115c11cca13.parquet
+    content_hash: 6de6bf821dfb26c2b3d97edbb415f6a088b589a8f3e7871126ea97e904ffb6ec
+    rows: 1004
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  - symbol: APP
+    timeframe: 1d
+    start: '2021-01-01'
+    end: '2024-12-31'
+    path: /Users/m/.quantbench/data_cache/yfinance_equity_APP_1d_44e50821228207ce.parquet
+    content_hash: 20a7f623d2c7a0330bba89479805f5fe1723e1dd58ca93d917d3bfec553b327d
+    rows: 934
+    provider: yfinance_equity
+    source: yfinance
+    adjustment:
+      method: raw
+      dividend_reinvested: false
+    fallback_reason: null
+    covers_delisted: false
+  covers_delisted: false
+data_slices: *id001
+funding: null
+universe:
+  name: sp500
+  as_of_date: '2024-12-31'
+  symbols:
+  - A
+  - AAPL
+  - ABBV
+  - ABNB
+  - ABT
+  - ACGL
+  - ACN
+  - ADBE
+  - ADI
+  - ADM
+  - ADP
+  - ADSK
+  - AEE
+  - AEP
+  - AES
+  - AFL
+  - AIG
+  - AIZ
+  - AJG
+  - AKAM
+  - ALB
+  - ALGN
+  - ALL
+  - ALLE
+  - AMAT
+  - AMCR
+  - AMD
+  - AME
+  - AMGN
+  - AMP
+  - AMT
+  - AMZN
+  - ANET
+  - AON
+  - AOS
+  - APA
+  - APD
+  - APH
+  - APO
+  - APP
+  point_in_time: false
+  survivorship_bias_note: 'This universe uses the current S&P 500 constituents across
+    the requested history. It is not point-in-time and therefore has survivorship
+    bias: companies removed from the index before the as-of date are absent from the
+    historical backtest sample. This universe was truncated to a 40-symbol sample
+    of the full S&P 500 (alphabetically first 40 tickers), for a quick/cheap test
+    run. It is NOT representative of the full index and results must not be interpreted
+    as an S&P 500-wide finding.'
+  source: https://en.wikipedia.org/wiki/List_of_S%26P_500_companies
+  sample_limit: 40
+  asset_class: equity
+  membership_intervals: null
+  covers_delisted: false
+  metadata:
+    gics_sector:
+      AOS: Industrials
+      ABT: Health Care
+      ABBV: Health Care
+      ACN: Information Technology
+      ADBE: Information Technology
+      AMD: Information Technology
+      AES: Utilities
+      AFL: Financials
+      A: Health Care
+      APD: Materials
+      ABNB: Consumer Discretionary
+      AKAM: Information Technology
+      ALB: Materials
+      ALGN: Health Care
+      ALLE: Industrials
+      ALL: Financials
+      AMZN: Consumer Discretionary
+      AMCR: Materials
+      AEE: Utilities
+      AEP: Utilities
+      AIG: Financials
+      AMT: Real Estate
+      AMP: Financials
+      AME: Industrials
+      AMGN: Health Care
+      APH: Information Technology
+      ADI: Information Technology
+      AON: Financials
+      APA: Energy
+      APO: Financials
+      AAPL: Information Technology
+      AMAT: Information Technology
+      APP: Information Technology
+      ACGL: Financials
+      ADM: Consumer Staples
+      ANET: Information Technology
+      AJG: Financials
+      AIZ: Financials
+      ADSK: Information Technology
+      ADP: Industrials
+execution:
+  signal_time: close_t
+  fill_price: open_t+1
+cost_model: fixed_bps
+borrow_model: not_applied
+neutralize:
+- beta
+- sector
+capacity_curve: []
+long_short_contribution:
+  long_contribution: 0.342098
+  short_contribution: -0.377045
+  short_share: 0.524298
+neutralization_comparison:
+  dimensions: beta,sector
+  raw_sharpe: -0.34389
+  neutralized_sharpe: -0.207425
+  raw_rank_ic_mean: -0.006356
+  neutralized_rank_ic_mean: 0.002314
+fetch_params: null
+parent_run_id: null
+derived_from_factor: null
+injected_skills: []
+factor_metadata:
+  lookback_bars: 60
+  lookback_source: inferred
+session_id: session_20260705_114949_cd3f
+turn_index: 0
+applied_memory_defaults: []
+literature_source: null
