@@ -85,6 +85,102 @@ def test_post_llm_key_rejects_blank_model(client):
     assert response.status_code == 400
 
 
+def test_config_mcp_import_list_and_toggle(client, tmp_path, monkeypatch):
+    user_mcp = tmp_path / "mcp.json"
+    project_mcp = tmp_path / ".mcp.json"
+    legacy_mcp = tmp_path / "legacy.json"
+    user_settings = tmp_path / "settings.json"
+    project_settings = tmp_path / "project_settings.json"
+    monkeypatch.setattr("quantbench.config_management.USER_MCP_CONFIG", user_mcp)
+    monkeypatch.setattr("quantbench.config_management.PROJECT_MCP_CONFIG", project_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.USER_MCP_CONFIG", user_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.PROJECT_MCP_CONFIG", project_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.MCP_SERVERS_CONFIG", legacy_mcp)
+    monkeypatch.setattr("quantbench.settings.USER_SETTINGS_FILE", user_settings)
+    monkeypatch.setattr("quantbench.settings.PROJECT_SETTINGS_FILE", project_settings)
+    monkeypatch.setattr("quantbench.settings.SETTINGS_FILES", [user_settings, project_settings])
+
+    response = client.post(
+        "/api/config/mcp-servers/import",
+        json={"scope": "user", "payload": {"mcpServers": {"fs": {"command": "python", "args": ["server.py"]}}}},
+    )
+    assert response.status_code == 200
+    assert response.json()[0]["name"] == "fs"
+
+    response = client.patch("/api/config/mcp-servers/fs", json={"enabled": False, "scope": "user"})
+    assert response.status_code == 200
+    listed = client.get("/api/config/mcp-servers").json()
+
+    assert listed[0]["name"] == "fs"
+    assert listed[0]["enabled"] is False
+
+
+def test_config_mcp_rejects_allow_write_and_corrupt_existing_json(client, tmp_path, monkeypatch):
+    user_mcp = tmp_path / "mcp.json"
+    project_mcp = tmp_path / ".mcp.json"
+    legacy_mcp = tmp_path / "legacy.json"
+    user_settings = tmp_path / "settings.json"
+    project_settings = tmp_path / "project_settings.json"
+    monkeypatch.setattr("quantbench.config_management.USER_MCP_CONFIG", user_mcp)
+    monkeypatch.setattr("quantbench.config_management.PROJECT_MCP_CONFIG", project_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.USER_MCP_CONFIG", user_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.PROJECT_MCP_CONFIG", project_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.MCP_SERVERS_CONFIG", legacy_mcp)
+    monkeypatch.setattr("quantbench.settings.USER_SETTINGS_FILE", user_settings)
+    monkeypatch.setattr("quantbench.settings.PROJECT_SETTINGS_FILE", project_settings)
+    monkeypatch.setattr("quantbench.settings.SETTINGS_FILES", [user_settings, project_settings])
+
+    response = client.post(
+        "/api/config/mcp-servers/import",
+        json={
+            "scope": "user",
+            "payload": {"mcpServers": {"writer": {"command": "python", "quantbench": {"allowWrite": True}}}},
+        },
+    )
+    assert response.status_code == 400
+    assert "allowWrite=true is not supported" in response.text
+
+    user_mcp.write_text("{not-json", encoding="utf-8")
+    response = client.post(
+        "/api/config/mcp-servers",
+        json={"name": "fs", "scope": "user", "command": "python", "args": []},
+    )
+    assert response.status_code == 400
+    assert "invalid JSON" in response.text
+
+
+def test_config_mcp_import_is_atomic_on_validation_error(client, tmp_path, monkeypatch):
+    user_mcp = tmp_path / "mcp.json"
+    project_mcp = tmp_path / ".mcp.json"
+    legacy_mcp = tmp_path / "legacy.json"
+    user_settings = tmp_path / "settings.json"
+    project_settings = tmp_path / "project_settings.json"
+    monkeypatch.setattr("quantbench.config_management.USER_MCP_CONFIG", user_mcp)
+    monkeypatch.setattr("quantbench.config_management.PROJECT_MCP_CONFIG", project_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.USER_MCP_CONFIG", user_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.PROJECT_MCP_CONFIG", project_mcp)
+    monkeypatch.setattr("quantbench.skills.mcp_adapter.MCP_SERVERS_CONFIG", legacy_mcp)
+    monkeypatch.setattr("quantbench.settings.USER_SETTINGS_FILE", user_settings)
+    monkeypatch.setattr("quantbench.settings.PROJECT_SETTINGS_FILE", project_settings)
+    monkeypatch.setattr("quantbench.settings.SETTINGS_FILES", [user_settings, project_settings])
+
+    response = client.post(
+        "/api/config/mcp-servers/import",
+        json={
+            "scope": "user",
+            "payload": {
+                "mcpServers": {
+                    "valid": {"command": "python", "args": ["server.py"]},
+                    "invalid": {"args": ["missing-command"]},
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert not user_mcp.exists()
+
+
 def test_list_runs_returns_summaries(tmp_path, client):
     _write_fake_completed_run(tmp_path)
 

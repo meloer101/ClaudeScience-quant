@@ -26,6 +26,54 @@ def test_parse_skill_doc_frontmatter_and_body(tmp_path):
     assert doc.body == "Build universe first."
 
 
+def test_parse_skill_doc_allows_missing_triggers(tmp_path):
+    from quantbench.skilldocs.doc import parse_skill_md
+
+    path = tmp_path / "plain.md"
+    path.write_text(
+        "---\n"
+        "name: plain\n"
+        "description: Plain momentum workflow\n"
+        "---\n"
+        "Use the description fallback.\n",
+        encoding="utf-8",
+    )
+
+    doc = parse_skill_md(path)
+
+    assert doc.triggers == []
+
+
+def test_registry_loads_multiple_dirs_project_overrides_and_filters_disabled(tmp_path, monkeypatch):
+    from quantbench.skilldocs.registry import SkillRegistryDocs
+
+    user_dir = tmp_path / "user"
+    project_dir = tmp_path / "project"
+    user_dir.mkdir()
+    project_dir.mkdir()
+    (user_dir / "shared.md").write_text(
+        "---\nname: shared\ndescription: User version\n---\nUser body.\n",
+        encoding="utf-8",
+    )
+    (project_dir / "shared.md").write_text(
+        "---\nname: shared\ndescription: Project version\n---\nProject body.\n",
+        encoding="utf-8",
+    )
+    (project_dir / "disabled.md").write_text(
+        "---\nname: disabled\ndescription: Disabled version\n---\nDisabled body.\n",
+        encoding="utf-8",
+    )
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"skills": {"disabledSkills": ["disabled"]}}), encoding="utf-8")
+    monkeypatch.setattr("quantbench.settings.SETTINGS_FILES", [settings])
+
+    docs = SkillRegistryDocs([user_dir, project_dir]).load_all()
+
+    assert [doc.name for doc in docs] == ["shared"]
+    assert docs[0].description == "Project version"
+    assert docs[0].scope == "project"
+
+
 def test_registry_matches_crypto_cross_sectional_request_but_not_equity_single_symbol(tmp_path):
     from quantbench.skilldocs.registry import SkillRegistryDocs
 
@@ -47,6 +95,28 @@ def test_registry_matches_crypto_cross_sectional_request_but_not_equity_single_s
         "crypto-cross-sectional-workflow"
     ]
     assert registry.match("测试 AAPL 单标的均线动量") == []
+
+
+def test_registry_matches_description_when_triggers_missing(tmp_path):
+    from quantbench.skilldocs.registry import SkillRegistryDocs
+
+    (tmp_path / "momentum.md").write_text(
+        "---\nname: momentum\ndescription: Momentum workflow for equities\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    assert [doc.name for doc in SkillRegistryDocs(tmp_path).match("please run an equities momentum test")] == ["momentum"]
+
+
+def test_registry_description_fallback_requires_two_specific_words(tmp_path):
+    from quantbench.skilldocs.registry import SkillRegistryDocs
+
+    (tmp_path / "momentum.md").write_text(
+        "---\nname: momentum\ndescription: Momentum workflow for equities\n---\nBody.\n",
+        encoding="utf-8",
+    )
+
+    assert SkillRegistryDocs(tmp_path).match("build a workflow for this request") == []
 
 
 def test_registry_loads_directory_skill_md_and_legacy_flat_files(tmp_path):
@@ -210,6 +280,35 @@ def test_coordinator_forced_skill_injects_without_auto_match(tmp_path, monkeypat
     assert manifest["injected_skills"] == ["reviewer-weak-triage"]
 
 
+def test_coordinator_forced_skill_can_inject_disabled_skill(tmp_path, monkeypatch):
+    from quantbench.agent.coordinator import Coordinator
+    from quantbench.artifact.store import ArtifactStore
+
+    skill_dir = tmp_path / "skills_docs"
+    skill_dir.mkdir()
+    (skill_dir / "reviewer-weak-triage.md").write_text(
+        "---\n"
+        "name: reviewer-weak-triage\n"
+        "description: Triage weak reviewer verdicts\n"
+        "triggers:\n"
+        "  - WEAK\n"
+        "---\n"
+        "Check warnings first.\n",
+        encoding="utf-8",
+    )
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"skills": {"disabledSkills": ["reviewer-weak-triage"]}}), encoding="utf-8")
+    monkeypatch.setattr("quantbench.agent.coordinator.DEFAULT_SKILL_DOCS_DIR", skill_dir)
+    monkeypatch.setattr("quantbench.settings.SETTINGS_FILES", [settings])
+
+    llm = FakeLLMClient([("text", "forced disabled skill")])
+    coordinator = Coordinator(run_store=ArtifactStore(tmp_path / "runs"), llm=llm)
+    result = coordinator.run("plain AAPL request", skill_names=["reviewer-weak-triage"])
+
+    manifest = json.loads((result.run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["injected_skills"] == ["reviewer-weak-triage"]
+
+
 def test_read_skill_file_allows_attached_file_and_blocks_traversal(tmp_path):
     from quantbench.agent.coordinator import build_read_skill_file_skill
 
@@ -234,3 +333,28 @@ def test_read_skill_file_allows_attached_file_and_blocks_traversal(tmp_path):
     denied = tool.fn("dir-skill", "../../.env")
     assert "error" in denied
     assert "outside skill directory" in denied["error"]
+
+
+def test_read_skill_file_allows_disabled_skill_attachment(tmp_path, monkeypatch):
+    from quantbench.agent.coordinator import build_read_skill_file_skill
+
+    skill_dir = tmp_path / "docs" / "dir-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: dir-skill\n"
+        "description: Directory style skill\n"
+        "triggers:\n"
+        "  - dir trigger\n"
+        "---\n"
+        "Body.\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "reference.csv").write_text("allowed\n", encoding="utf-8")
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"skills": {"disabledSkills": ["dir-skill"]}}), encoding="utf-8")
+    monkeypatch.setattr("quantbench.settings.SETTINGS_FILES", [settings])
+
+    tool = build_read_skill_file_skill(tmp_path / "docs")
+
+    assert tool.fn("dir-skill", "reference.csv") == {"skill": "dir-skill", "path": "reference.csv", "content": "allowed\n"}

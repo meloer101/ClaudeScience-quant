@@ -15,6 +15,7 @@ class SkillDoc:
     body: str
     path: str
     attachments: list[str] | None = None
+    scope: str = "unknown"
 
 
 def parse_skill_md(path: Path) -> SkillDoc:
@@ -23,15 +24,17 @@ def parse_skill_md(path: Path) -> SkillDoc:
         raise ValueError(f"{path} is missing YAML frontmatter")
     _, frontmatter, body = text.split("---", 2)
     meta: dict[str, Any] = yaml.safe_load(frontmatter) or {}
-    missing = [key for key in ("name", "description", "triggers") if not meta.get(key)]
+    missing = [key for key in ("name", "description") if not meta.get(key)]
     if missing:
         raise ValueError(f"{path} is missing frontmatter field(s): {', '.join(missing)}")
     body = body.strip()
     if not body:
         raise ValueError(f"{path} has empty Skill body")
-    triggers = meta["triggers"]
+    triggers = meta.get("triggers", [])
+    if triggers is None:
+        triggers = []
     if not isinstance(triggers, list) or not all(isinstance(item, str) and item for item in triggers):
-        raise ValueError(f"{path} triggers must be a non-empty string list")
+        raise ValueError(f"{path} triggers must be a string list")
     return SkillDoc(
         name=str(meta["name"]),
         description=str(meta["description"]),

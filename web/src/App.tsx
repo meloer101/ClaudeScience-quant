@@ -22,6 +22,7 @@ import { LiteratureViewer } from "./components/LiteratureViewer";
 import type { OpenArtifactTab } from "./components/ArtifactInspector";
 import { ResizeHandle } from "./components/ResizeHandle";
 import { ApiKeyModal } from "./components/ApiKeyModal";
+import { CustomizePanel } from "./components/CustomizePanel";
 import { HomePage } from "./HomePage";
 
 const ArtifactInspector = lazy(() =>
@@ -72,6 +73,7 @@ function WorkbenchApp() {
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [compareRunIds, setCompareRunIds] = useState<string[]>([]);
   const [libraryFilters, setLibraryFilters] = useState({ verdict: "", asset: "", sort: "created_at" });
+  const [showCustomize, setShowCustomize] = useState(false);
 
   const handleSidebarResize = (deltaX: number) => {
     setSidebarWidth((prev) => {
@@ -322,6 +324,7 @@ function WorkbenchApp() {
       {configStatus && !configStatus.llm_key_configured && (
         <ApiKeyModal currentModel={configStatus.model} onSubmit={handleSaveLlmKey} />
       )}
+      {showCustomize && <CustomizePanel onClose={() => setShowCustomize(false)} />}
       {sidebarCollapsed ? (
         <div className="shrink-0 w-11 h-full bg-warm-50 flex flex-col items-center">
           <div className="h-[45px] flex items-center justify-center shrink-0">
@@ -348,6 +351,7 @@ function WorkbenchApp() {
             onOpenPaper={openPaperTab}
             onImportPaper={handleImportPaper}
             onNew={handleNewTab}
+            onCustomize={() => setShowCustomize(true)}
             compareRunIds={compareRunIds}
             onToggleCompare={toggleCompare}
             onOpenCompare={() => {

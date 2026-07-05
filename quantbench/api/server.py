@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from quantbench.api import run_reader
+from quantbench.api.config_routes import router as config_router
 from quantbench.api.llm_key import active_model, llm_key_configured, provider_key_env, store_llm_config
 from quantbench.api.run_manager import RunManager
 from quantbench.api.security import allowed_origins, require_api_token
@@ -70,13 +71,16 @@ app = FastAPI(title="QuantBench API", lifespan=_lifespan, dependencies=[Depends(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins(),
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-QuantBench-Token"],
 )
 
 
 def _session_store() -> SessionStore:
     return SessionStore(run_reader.RUNS_DIR)
+
+
+app.include_router(config_router)
 
 
 @app.get("/api/config/status", response_model=ConfigStatus)

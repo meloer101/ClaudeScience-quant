@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import click
 
@@ -9,12 +10,23 @@ from quantbench.api import run_reader
 from quantbench.config import FACTORS_DIR as DEFAULT_FACTORS_DIR
 from quantbench.data.cache import file_sha256
 from quantbench.config import SKILL_DOCS_DIR as DEFAULT_SKILL_DOCS_DIR
+from quantbench.config import USER_SKILL_DOCS_DIR as DEFAULT_USER_SKILL_DOCS_DIR
+from quantbench.config_management import (
+    import_mcp_servers,
+    import_skill_from_path,
+    list_mcp_server_records,
+    remove_mcp_server,
+    save_mcp_server,
+    set_mcp_server_enabled,
+    set_skill_doc_enabled,
+)
 from quantbench.factors.entry import RejectedFactorError, build_entry_from_run
 from quantbench.factors.parametrize import parse_param_overrides
 from quantbench.factors.store import FactorStore
 from quantbench.library.compare import compare_runs
 from quantbench.library.index import ExperimentIndex, parse_csv_set
 from quantbench.platform import assert_supported_platform
+from quantbench.settings import is_skill_enabled
 from quantbench.skilldocs.registry import SkillRegistryDocs
 
 
@@ -37,6 +49,9 @@ def main(args: tuple[str, ...]) -> None:
         return
     if args[0] == "skill":
         _skill(args[1:])
+        return
+    if args[0] == "mcp":
+        _mcp(args[1:])
         return
     if args[0] == "compare":
         _compare(args[1:])
@@ -539,14 +554,17 @@ def _literature(args: tuple[str, ...], forced_skills: list[str] | None = None) -
 
 def _skill(args: tuple[str, ...]) -> None:
     if not args:
-        raise click.UsageError("skill requires a subcommand: list/show")
-    registry = SkillRegistryDocs(DEFAULT_SKILL_DOCS_DIR)
+        raise click.UsageError("skill requires a subcommand: list/show/enable/disable/add")
+    registry = SkillRegistryDocs([DEFAULT_USER_SKILL_DOCS_DIR, DEFAULT_SKILL_DOCS_DIR])
     if args[0] == "list":
-        headers = ["name", "description", "triggers"]
+        headers = ["name", "enabled", "scope", "description", "triggers"]
         click.echo(" | ".join(headers))
         click.echo(" | ".join("---" for _ in headers))
         for doc in registry.load_all():
-            click.echo(f"{doc.name} | {doc.description} | {', '.join(doc.triggers)}")
+            click.echo(
+                f"{doc.name} | {is_skill_enabled(doc.name)} | {doc.scope} | "
+                f"{doc.description} | {', '.join(doc.triggers)}"
+            )
         return
     if args[0] == "show":
         if len(args) < 2:
@@ -558,7 +576,113 @@ def _skill(args: tuple[str, ...]) -> None:
         click.echo("")
         click.echo(doc.body)
         return
+    if args[0] in {"enable", "disable"}:
+        if len(args) < 2:
+            raise click.UsageError(f"skill {args[0]} requires name")
+        set_skill_doc_enabled(args[1], args[0] == "enable", scope=_option_value(args[2:], "--scope") or "user")
+        click.echo(f"{args[0]}d skill {args[1]}")
+        return
+    if args[0] == "add":
+        if len(args) < 2:
+            raise click.UsageError("skill add requires path")
+        record = import_skill_from_path(args[1])
+        click.echo(f"Imported skill {record['name']} to {record['path']}")
+        return
     raise click.UsageError(f"unknown skill subcommand: {args[0]}")
+
+
+def _mcp(args: tuple[str, ...]) -> None:
+    if not args:
+        raise click.UsageError("mcp requires a subcommand: add/import/list/get/remove/enable/disable/migrate")
+    command = args[0]
+    rest = args[1:]
+    if command == "list":
+        headers = ["name", "enabled", "scope", "type", "command/url", "tools"]
+        click.echo(" | ".join(headers))
+        click.echo(" | ".join("---" for _ in headers))
+        for record in list_mcp_server_records():
+            target = record["url"] or " ".join([record["command"], *record["args"]]).strip()
+            click.echo(
+                f"{record['name']} | {record['enabled']} | {record['scope']} | "
+                f"{record['type']} | {_clip(target, 60)} | {', '.join(record['enabledTools']) or 'readonly:*'}"
+            )
+        return
+    if command == "get":
+        if not rest:
+            raise click.UsageError("mcp get requires name")
+        record = next((item for item in list_mcp_server_records() if item["name"] == rest[0]), None)
+        if record is None:
+            raise click.ClickException(f"MCP server not found: {rest[0]}")
+        click.echo(json.dumps(record, ensure_ascii=False, indent=2))
+        return
+    if command == "add":
+        if len(rest) < 2:
+            raise click.UsageError("mcp add requires <name> <command> [args...]")
+        name = rest[0]
+        scope = _option_value(rest, "--scope") or "user"
+        transport = _option_value(rest, "--transport") or "stdio"
+        url = _option_value(rest, "--url")
+        env = _parse_env_options(_option_values(rest, "--env"))
+        option_names = {"--scope", "--transport", "--url", "--env"}
+        positional = _without_options(rest[1:], option_names)
+        if transport == "stdio":
+            if not positional:
+                raise click.UsageError("mcp add stdio requires command")
+            config = {"command": positional[0], "args": positional[1:], "env": env}
+        else:
+            config = {"type": transport, "url": url or ""}
+        try:
+            save_mcp_server(name, config, scope=scope)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        click.echo(f"Added MCP server {name} ({scope})")
+        return
+    if command == "add-json":
+        if len(rest) < 2:
+            raise click.UsageError("mcp add-json requires <name> '<json>'")
+        scope = _option_value(rest[2:], "--scope") or "user"
+        try:
+            save_mcp_server(rest[0], json.loads(rest[1]), scope=scope)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        click.echo(f"Added MCP server {rest[0]} ({scope})")
+        return
+    if command == "import":
+        if not rest:
+            raise click.UsageError("mcp import requires a path or JSON string")
+        scope = _option_value(rest[1:], "--scope") or "user"
+        source = Path(rest[0]).expanduser()
+        text = source.read_text(encoding="utf-8") if source.exists() else rest[0]
+        try:
+            imported = import_mcp_servers(json.loads(text), scope=scope)
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
+        click.echo(f"Imported {len(imported)} MCP server(s)")
+        return
+    if command == "remove":
+        if not rest:
+            raise click.UsageError("mcp remove requires name")
+        scope = _option_value(rest[1:], "--scope") or "user"
+        if not remove_mcp_server(rest[0], scope=scope):
+            raise click.ClickException(f"MCP server not found in {scope} scope: {rest[0]}")
+        click.echo(f"Removed MCP server {rest[0]}")
+        return
+    if command in {"enable", "disable"}:
+        if not rest:
+            raise click.UsageError(f"mcp {command} requires name")
+        scope = _option_value(rest[1:], "--scope") or "user"
+        set_mcp_server_enabled(rest[0], command == "enable", scope=scope)
+        click.echo(f"{command}d MCP server {rest[0]}")
+        return
+    if command == "migrate":
+        from quantbench.config import MCP_SERVERS_CONFIG
+        from quantbench.skills.mcp_adapter import load_mcp_config, mcp_server_to_config_dict
+
+        servers = load_mcp_config(MCP_SERVERS_CONFIG, scope="legacy")
+        import_mcp_servers({"mcpServers": {server.name: mcp_server_to_config_dict(server) for server in servers}}, scope="project")
+        click.echo(f"Migrated {len(servers)} MCP server(s) to project .mcp.json")
+        return
+    raise click.UsageError(f"unknown mcp subcommand: {command}")
 
 
 def _run_request(user_request: str, forced_skills: list[str] | None = None) -> None:
@@ -606,6 +730,34 @@ def _option_values(args: tuple[str, ...], name: str) -> list[str]:
             index += 1
         index += 1
     return values
+
+
+def _parse_env_options(values: list[str]) -> dict[str, str]:
+    env: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise click.UsageError("--env values must be K=V")
+        key, _, item = value.partition("=")
+        if not key:
+            raise click.UsageError("--env keys must not be empty")
+        env[key] = item
+    return env
+
+
+def _without_options(args: tuple[str, ...], option_names: set[str]) -> list[str]:
+    kept: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in option_names:
+            index += 2
+            continue
+        if any(arg.startswith(f"{name}=") for name in option_names):
+            index += 1
+            continue
+        kept.append(arg)
+        index += 1
+    return kept
 
 
 def _consume_repeated_option(args: tuple[str, ...], name: str) -> tuple[list[str], tuple[str, ...]]:
