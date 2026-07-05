@@ -1,3 +1,7 @@
+<p align="right">
+  <strong>English</strong> ｜ <a href="README.zh-CN.md">中文</a>
+</p>
+
 <p align="center">
   <img src="docs/assets/banner-workflow.png" alt="QuantBench — AI workflow for quantitative research" width="900" />
 </p>
