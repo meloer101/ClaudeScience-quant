@@ -5,7 +5,6 @@ from pathlib import Path
 
 import click
 
-from quantbench.agent.coordinator import Coordinator
 from quantbench.api import run_reader
 from quantbench.config import FACTORS_DIR as DEFAULT_FACTORS_DIR
 from quantbench.data.cache import file_sha256
@@ -215,7 +214,7 @@ def _portfolio(args: tuple[str, ...]) -> None:
     cost_bps_value = _option_value(rest, "--cost-bps")
     split_value = _option_value(rest, "--split")
     max_weight_value = _option_value(rest, "--max-weight")
-    result = Coordinator().optimize_portfolio(
+    result = _new_coordinator().optimize_portfolio(
         run_ids,
         method=method,
         cost_bps=float(cost_bps_value) if cost_bps_value is not None else None,
@@ -338,7 +337,7 @@ def _factor(args: tuple[str, ...], forced_skills: list[str]) -> None:
         request = _option_value(args[2:], "--on") or " ".join(arg for arg in args[2:] if not arg.startswith("--"))
         if not request:
             raise click.UsageError("factor use requires --on REQUEST")
-        result = Coordinator().run_from_factor(name, params, request, skill_names=forced_skills, factor_store=store)
+        result = _new_coordinator().run_from_factor(name, params, request, skill_names=forced_skills, factor_store=store)
         _echo_run_result(result)
         return
     if command == "export":
@@ -537,7 +536,7 @@ def _literature(args: tuple[str, ...], forced_skills: list[str] | None = None) -
         from quantbench.literature.agent import extract_factor
 
         paper = store.load(args[1])
-        extraction = extract_factor(Coordinator().llm, paper)
+        extraction = extract_factor(_new_coordinator().llm, paper)
         click.echo(json.dumps(extraction.to_dict(), ensure_ascii=False, indent=2))
         return
 
@@ -545,7 +544,7 @@ def _literature(args: tuple[str, ...], forced_skills: list[str] | None = None) -
         if len(args) < 2:
             raise click.UsageError("literature reproduce requires a paper_id")
         request = _option_value(args[2:], "--request")
-        result = Coordinator().run_from_paper(
+        result = _new_coordinator().run_from_paper(
             args[1], request, skill_names=forced_skills, paper_store=store
         )
         _echo_run_result(result)
@@ -554,7 +553,7 @@ def _literature(args: tuple[str, ...], forced_skills: list[str] | None = None) -
     # Shorthand: `literature <pdf|arxiv-url>` = ingest + reproduce in one step.
     paper = ingest_and_store(subcommand, store)
     click.echo(f"Ingested paper_id {paper.paper_id}: {paper.title}")
-    result = Coordinator().run_from_paper(paper.paper_id, skill_names=forced_skills, paper_store=store)
+    result = _new_coordinator().run_from_paper(paper.paper_id, skill_names=forced_skills, paper_store=store)
     _echo_run_result(result)
 
 
@@ -704,8 +703,21 @@ def _mcp(args: tuple[str, ...]) -> None:
     raise click.UsageError(f"unknown mcp subcommand: {command}")
 
 
+def _new_coordinator():
+    """Construct a Coordinator, importing it lazily.
+
+    The coordinator module pulls in the full research stack (scipy.stats, the review engine,
+    matplotlib) - roughly 1.2s of import time. Deferring it here keeps lightweight commands
+    (`examples seed`, `mcp`/`skill`/`library` listing, `--help`) fast, which matters most on a
+    first-run cold cache. Only commands that actually run research pay the cost.
+    """
+    from quantbench.agent.coordinator import Coordinator
+
+    return Coordinator()
+
+
 def _run_request(user_request: str, forced_skills: list[str] | None = None) -> None:
-    result = Coordinator().run(user_request, skill_names=forced_skills)
+    result = _new_coordinator().run(user_request, skill_names=forced_skills)
     _echo_run_result(result)
 
 

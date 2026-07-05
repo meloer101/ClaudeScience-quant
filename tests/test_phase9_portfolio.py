@@ -731,7 +731,9 @@ def test_cli_portfolio_optimize_does_not_swallow_option_values_as_run_ids(monkey
             captured["cost_bps"] = cost_bps
             return SimpleNamespace(run_id="run_x", metrics={}, warnings=[], run_dir=Path("."))
 
-    monkeypatch.setattr("quantbench.cli.Coordinator", FakeCoordinator)
+    # cli.py imports Coordinator lazily (inside _new_coordinator) to keep light commands fast,
+    # so patch it at the source module rather than in the cli namespace.
+    monkeypatch.setattr("quantbench.agent.coordinator.Coordinator", FakeCoordinator)
 
     result = CliRunner().invoke(
         main, ["portfolio", "optimize", "run_a", "run_b", "--method", "min_variance", "--cost-bps", "10"], catch_exceptions=False
