@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from quantbench.config import MCP_SERVERS_CONFIG, PROJECT_MCP_CONFIG, USER_MCP_CONFIG
+from quantbench.settings import is_server_enabled, load_settings
 from quantbench.skills.registry import Skill
 
 
@@ -21,6 +23,8 @@ class StdioTransportConfig:
     command: str
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    type: str = "stdio"
+    url: str = ""
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,8 @@ class MCPServerConfig:
     transport: StdioTransportConfig
     enabled_tools: list[str] = field(default_factory=list)
     allow_write: bool = False
+    scope: str = "unknown"
+    source: str = ""
 
 
 @dataclass
@@ -57,7 +63,7 @@ SIDE_EFFECT_TOKENS = (
 )
 
 
-def load_mcp_config(path: str | Path) -> list[MCPServerConfig]:
+def load_mcp_config(path: str | Path, *, scope: str = "unknown") -> list[MCPServerConfig]:
     config_path = Path(path)
     if not config_path.exists():
         return []
@@ -67,14 +73,9 @@ def load_mcp_config(path: str | Path) -> list[MCPServerConfig]:
         warnings.warn(f"Skipping MCP config {config_path}: {type(exc).__name__}: {exc}", stacklevel=2)
         return []
 
-    servers = payload.get("servers", []) if isinstance(payload, dict) else []
-    if not isinstance(servers, list):
-        warnings.warn("Skipping MCP config: `servers` must be a list.", stacklevel=2)
-        return []
-
     parsed: list[MCPServerConfig] = []
     seen: set[str] = set()
-    for index, raw in enumerate(servers):
+    for index, raw in enumerate(_server_entries(payload)):
         try:
             server = _parse_server_config(raw)
         except ValueError as exc:
@@ -85,8 +86,69 @@ def load_mcp_config(path: str | Path) -> list[MCPServerConfig]:
             warnings.warn(f"Skipping MCP server {server.name}: duplicate name.", stacklevel=2)
             continue
         seen.add(server.name)
-        parsed.append(server)
+        parsed.append(
+            MCPServerConfig(
+                name=server.name,
+                transport=server.transport,
+                enabled_tools=server.enabled_tools,
+                allow_write=server.allow_write,
+                scope=scope,
+                source=str(config_path),
+            )
+        )
     return parsed
+
+
+def load_merged_mcp_config(
+    paths: list[tuple[str, Path]] | None = None,
+    *,
+    include_disabled: bool = False,
+    settings: dict[str, Any] | None = None,
+) -> list[MCPServerConfig]:
+    config_paths = paths or [
+        ("legacy", MCP_SERVERS_CONFIG),
+        ("user", USER_MCP_CONFIG),
+        ("project", PROJECT_MCP_CONFIG),
+    ]
+    merged: dict[str, MCPServerConfig] = {}
+    for scope, path in config_paths:
+        for server in load_mcp_config(path, scope=scope):
+            merged[server.name] = server
+    effective_settings = settings if settings is not None else load_settings()
+    servers = list(merged.values())
+    if not include_disabled:
+        servers = [server for server in servers if is_server_enabled(server.name, effective_settings)]
+    return servers
+
+
+def mcp_server_to_config_dict(server: MCPServerConfig, *, include_name: bool = False) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if include_name:
+        payload["name"] = server.name
+    if server.transport.type == "stdio":
+        payload.update(
+            {
+                "command": server.transport.command,
+                "args": list(server.transport.args),
+            }
+        )
+        if server.transport.env:
+            payload["env"] = dict(server.transport.env)
+    else:
+        payload["type"] = server.transport.type
+        payload["url"] = server.transport.url
+    quantbench: dict[str, Any] = {}
+    if server.enabled_tools:
+        quantbench["enabledTools"] = list(server.enabled_tools)
+    if server.allow_write:
+        quantbench["allowWrite"] = True
+    if quantbench:
+        payload["quantbench"] = quantbench
+    return payload
+
+
+def parse_mcp_server_config(name: str, payload: dict[str, Any]) -> MCPServerConfig:
+    return _parse_server_config({"name": name, **payload})
 
 
 def is_readonly_tool(tool: Any) -> bool:
@@ -129,15 +191,13 @@ class MCPClientManager:
                     stacklevel=2,
                 )
                 continue
-            if not server.enabled_tools:
-                continue
             connection = self._connect(server)
             if connection is None:
                 continue
             enabled = set(server.enabled_tools)
             for tool in connection.tools:
                 tool_name = str(getattr(tool, "name", ""))
-                if tool_name not in enabled:
+                if enabled and tool_name not in enabled:
                     continue
                 if not is_readonly_tool(tool):
                     warnings.warn(
@@ -180,15 +240,29 @@ class MCPClientManager:
 
     async def _connect_async(self, server: MCPServerConfig) -> _ServerConnection:
         from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
 
         stack = AsyncExitStack()
-        params = StdioServerParameters(
-            command=server.transport.command,
-            args=server.transport.args,
-            env=server.transport.env or None,
-        )
-        read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
+        if server.transport.type == "stdio":
+            from mcp.client.stdio import stdio_client
+
+            params = StdioServerParameters(
+                command=server.transport.command,
+                args=server.transport.args,
+                env=server.transport.env or None,
+            )
+            read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
+        elif server.transport.type == "sse":
+            from mcp.client.sse import sse_client
+
+            read_stream, write_stream = await stack.enter_async_context(sse_client(server.transport.url))
+        elif server.transport.type == "http":
+            from mcp.client.streamable_http import streamablehttp_client
+
+            read_stream, write_stream, _get_session_id = await stack.enter_async_context(
+                streamablehttp_client(server.transport.url)
+            )
+        else:
+            raise ValueError(f"{server.transport.type} transport is not supported")
         session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
         await session.initialize()
         result = await session.list_tools()
@@ -262,35 +336,70 @@ class MCPClientManager:
         self._connections.clear()
 
 
+def _server_entries(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    if "mcpServers" in payload:
+        servers = payload.get("mcpServers")
+        if not isinstance(servers, dict):
+            warnings.warn("Skipping MCP config: `mcpServers` must be an object.", stacklevel=2)
+            return []
+        entries: list[dict[str, Any]] = []
+        for name, config in servers.items():
+            if isinstance(config, dict):
+                entries.append({"name": name, **config})
+            else:
+                entries.append({"name": name, "_invalid": config})
+        return entries
+    servers = payload.get("servers", [])
+    if not isinstance(servers, list):
+        warnings.warn("Skipping MCP config: `servers` must be a list.", stacklevel=2)
+        return []
+    return list(servers)
+
+
 def _parse_server_config(raw: Any) -> MCPServerConfig:
     if not isinstance(raw, dict):
         raise ValueError("server entry must be an object")
     name = raw.get("name")
     if not isinstance(name, str) or not name:
         raise ValueError("missing non-empty name")
-    transport = raw.get("transport")
-    if not isinstance(transport, dict):
-        raise ValueError("missing transport")
-    if transport.get("type") != "stdio":
-        raise ValueError("only stdio transport is supported")
-    command = transport.get("command")
-    if not isinstance(command, str) or not command:
+    transport = raw.get("transport") if isinstance(raw.get("transport"), dict) else raw
+    transport_type = transport.get("type", "stdio")
+    if transport_type not in {"stdio", "sse", "http"}:
+        raise ValueError("type must be stdio, sse, or http")
+    command = transport.get("command", "")
+    url = transport.get("url", "")
+    if transport_type == "stdio" and (not isinstance(command, str) or not command):
         raise ValueError("transport.command must be non-empty")
+    if transport_type in {"sse", "http"} and (not isinstance(url, str) or not url):
+        raise ValueError("transport.url must be non-empty")
     args = transport.get("args", [])
     if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
         raise ValueError("transport.args must be a list of strings")
     env = transport.get("env", {})
     if not isinstance(env, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in env.items()):
         raise ValueError("transport.env must be an object of strings")
-    enabled_tools = raw.get("enabled_tools", [])
+    quantbench = raw.get("quantbench", {})
+    if quantbench is None:
+        quantbench = {}
+    if not isinstance(quantbench, dict):
+        raise ValueError("quantbench must be an object")
+    enabled_tools = raw.get("enabled_tools", quantbench.get("enabledTools", []))
     if not isinstance(enabled_tools, list) or not all(isinstance(item, str) for item in enabled_tools):
         raise ValueError("enabled_tools must be a list of strings")
-    allow_write = raw.get("allow_write", False)
+    allow_write = raw.get("allow_write", quantbench.get("allowWrite", False))
     if not isinstance(allow_write, bool):
         raise ValueError("allow_write must be a boolean")
     return MCPServerConfig(
         name=name,
-        transport=StdioTransportConfig(command=command, args=list(args), env=dict(env)),
+        transport=StdioTransportConfig(
+            command=command,
+            args=list(args),
+            env=dict(env),
+            type=str(transport_type),
+            url=url if isinstance(url, str) else "",
+        ),
         enabled_tools=list(enabled_tools),
         allow_write=allow_write,
     )

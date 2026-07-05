@@ -13,6 +13,7 @@ interface SidebarProps {
   onImportPaper: (source: string) => Promise<void>;
   onUploadPaper?: (file: File) => Promise<void>;
   onNew: () => void;
+  onCustomize: () => void;
   compareRunIds: string[];
   onToggleCompare: (runId: string) => void;
   onOpenCompare: () => void;
@@ -185,6 +186,7 @@ export function Sidebar({
   onImportPaper,
   onUploadPaper,
   onNew,
+  onCustomize,
   compareRunIds,
   onToggleCompare,
   onOpenCompare,
@@ -222,6 +224,12 @@ export function Sidebar({
         >
           <span className="text-warm-400">+</span>
           New
+        </button>
+        <button
+          onClick={onCustomize}
+          className="mt-1 w-full text-left text-sm px-2.5 py-1.5 rounded-md text-warm-700 hover:bg-warm-100 transition-colors flex items-center gap-1.5"
+        >
+          Customize
         </button>
       </div>
       <div className="px-3 pb-3 border-b border-warm-100">

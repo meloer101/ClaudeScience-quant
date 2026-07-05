@@ -41,6 +41,83 @@ def test_load_mcp_config_uses_explicit_tool_whitelist_and_defaults(tmp_path: Pat
     assert servers[1].transport.env == {"A": "B"}
 
 
+def test_load_mcp_config_accepts_claude_mcpservers_format(tmp_path: Path):
+    from quantbench.skills.mcp_adapter import load_mcp_config
+
+    config_path = tmp_path / "mcp.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"],
+                        "env": {"FOO": "bar"},
+                        "quantbench": {"enabledTools": ["read_file"], "allowWrite": False},
+                    },
+                    "remote": {"type": "http", "url": "https://mcp.example.com/mcp"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    servers = load_mcp_config(config_path, scope="user")
+
+    assert [server.name for server in servers] == ["filesystem", "remote"]
+    assert servers[0].transport.command == "npx"
+    assert servers[0].enabled_tools == ["read_file"]
+    assert servers[0].scope == "user"
+    assert servers[1].transport.type == "http"
+    assert servers[1].transport.url == "https://mcp.example.com/mcp"
+
+
+def test_load_merged_mcp_config_project_overrides_user_and_filters_disabled(tmp_path: Path):
+    from quantbench.skills.mcp_adapter import load_merged_mcp_config
+
+    user_config = tmp_path / "user_mcp.json"
+    project_config = tmp_path / "project_mcp.json"
+    user_config.write_text(
+        json.dumps({"mcpServers": {"shared": {"command": "python", "args": ["user.py"]}, "user-only": {"command": "u"}}}),
+        encoding="utf-8",
+    )
+    project_config.write_text(
+        json.dumps({"mcpServers": {"shared": {"command": "python", "args": ["project.py"]}, "off": {"command": "off"}}}),
+        encoding="utf-8",
+    )
+
+    servers = load_merged_mcp_config(
+        [("user", user_config), ("project", project_config)],
+        settings={"mcp": {"disabledServers": ["off"]}},
+    )
+
+    assert [server.name for server in servers] == ["shared", "user-only"]
+    shared = next(server for server in servers if server.name == "shared")
+    assert shared.scope == "project"
+    assert shared.transport.args == ["project.py"]
+
+
+def test_load_merged_mcp_config_legacy_has_lowest_default_priority(tmp_path: Path, monkeypatch):
+    from quantbench.skills import mcp_adapter
+    from quantbench.skills.mcp_adapter import load_merged_mcp_config
+
+    legacy_config = tmp_path / "legacy.json"
+    user_config = tmp_path / "user.json"
+    project_config = tmp_path / "project.json"
+    legacy_config.write_text(json.dumps({"mcpServers": {"x": {"command": "LEGACY"}}}), encoding="utf-8")
+    user_config.write_text(json.dumps({"mcpServers": {"x": {"command": "USER"}}}), encoding="utf-8")
+    project_config.write_text(json.dumps({"mcpServers": {"x": {"command": "PROJECT"}}}), encoding="utf-8")
+    monkeypatch.setattr(mcp_adapter, "MCP_SERVERS_CONFIG", legacy_config)
+    monkeypatch.setattr(mcp_adapter, "USER_MCP_CONFIG", user_config)
+    monkeypatch.setattr(mcp_adapter, "PROJECT_MCP_CONFIG", project_config)
+
+    servers = load_merged_mcp_config(settings={})
+
+    assert len(servers) == 1
+    assert servers[0].transport.command == "PROJECT"
+    assert servers[0].scope == "project"
+
+
 def test_load_mcp_config_skips_invalid_servers_with_warning(tmp_path: Path):
     from quantbench.skills.mcp_adapter import load_mcp_config
 

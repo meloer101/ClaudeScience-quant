@@ -83,6 +83,64 @@ class ConfigStatus(BaseModel):
     key_env: str
 
 
+class EnabledRequest(BaseModel):
+    enabled: bool
+    scope: str = "user"
+
+
+class McpServerRecord(BaseModel):
+    name: str
+    type: str = "stdio"
+    command: str = ""
+    args: list[str] = []
+    env: dict[str, str] = {}
+    url: str = ""
+    enabledTools: list[str] = []
+    allowWrite: bool = False
+    scope: str
+    source: str
+    enabled: bool
+    status: str
+    tools: list[str] = []
+
+
+class McpServerUpsertRequest(BaseModel):
+    name: str
+    scope: str = "user"
+    type: str = "stdio"
+    command: str | None = None
+    args: list[str] = []
+    env: dict[str, str] = {}
+    url: str | None = None
+    enabledTools: list[str] = []
+    allowWrite: bool = False
+
+
+class McpServersImportRequest(BaseModel):
+    scope: str = "user"
+    payload: dict
+
+
+class McpServerTestResponse(BaseModel):
+    status: str
+    tools: list[str] = []
+    error: str | None = None
+
+
+class SkillRecord(BaseModel):
+    name: str
+    description: str
+    triggers: list[str] = []
+    path: str
+    scope: str
+    enabled: bool
+    attachments: list[str] = []
+
+
+class SkillImportRequest(BaseModel):
+    skill_md: str
+
+
 class LlmKeyRequest(BaseModel):
     model: str
     api_key: str

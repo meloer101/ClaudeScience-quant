@@ -269,3 +269,96 @@ export function setLlmConfig(model: string, apiKey: string): Promise<{ status: s
     body: JSON.stringify({ model, api_key: apiKey }),
   });
 }
+
+export interface McpServerRecord {
+  name: string;
+  type: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  url: string;
+  enabledTools: string[];
+  allowWrite: boolean;
+  scope: string;
+  source: string;
+  enabled: boolean;
+  status: string;
+  tools: string[];
+}
+
+export interface McpServerInput {
+  name: string;
+  scope?: string;
+  type?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  enabledTools?: string[];
+  allowWrite?: boolean;
+}
+
+export interface SkillRecord {
+  name: string;
+  description: string;
+  triggers: string[];
+  path: string;
+  scope: string;
+  enabled: boolean;
+  attachments: string[];
+}
+
+export function listMcpServers(): Promise<McpServerRecord[]> {
+  return request<McpServerRecord[]>("/config/mcp-servers");
+}
+
+export function saveMcpServer(server: McpServerInput): Promise<McpServerRecord> {
+  return request<McpServerRecord>("/config/mcp-servers", {
+    method: "POST",
+    body: JSON.stringify(server),
+  });
+}
+
+export function importMcpServers(payload: Record<string, unknown>, scope = "user"): Promise<McpServerRecord[]> {
+  return request<McpServerRecord[]>("/config/mcp-servers/import", {
+    method: "POST",
+    body: JSON.stringify({ payload, scope }),
+  });
+}
+
+export function deleteMcpServer(name: string, scope = "user"): Promise<{ status: string }> {
+  return request(`/config/mcp-servers/${encodeURIComponent(name)}?scope=${encodeURIComponent(scope)}`, { method: "DELETE" });
+}
+
+export function toggleMcpServer(name: string, enabled: boolean, scope = "user"): Promise<{ status: string }> {
+  return request(`/config/mcp-servers/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled, scope }),
+  });
+}
+
+export function testMcpServer(name: string): Promise<{ status: string; tools: string[]; error?: string | null }> {
+  return request(`/config/mcp-servers/${encodeURIComponent(name)}/test`, { method: "POST" });
+}
+
+export function listSkills(): Promise<SkillRecord[]> {
+  return request<SkillRecord[]>("/config/skills");
+}
+
+export function toggleSkill(name: string, enabled: boolean, scope = "user"): Promise<{ status: string }> {
+  return request(`/config/skills/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled, scope }),
+  });
+}
+
+export function importSkill(skillMd: string): Promise<SkillRecord> {
+  return request<SkillRecord>("/config/skills/import", {
+    method: "POST",
+    body: JSON.stringify({ skill_md: skillMd }),
+  });
+}
+
+export function deleteSkill(name: string): Promise<{ status: string }> {
+  return request(`/config/skills/${encodeURIComponent(name)}`, { method: "DELETE" });
+}

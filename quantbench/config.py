@@ -18,6 +18,12 @@ FACTORS_DIR = QUANTBENCH_HOME / "factors"
 LITERATURE_DIR = QUANTBENCH_HOME / "literature"
 SKILL_DOCS_DIR = PROJECT_ROOT / "skills_docs"
 MCP_SERVERS_CONFIG = PROJECT_ROOT / "mcp_servers.json"
+USER_MCP_CONFIG = QUANTBENCH_HOME / "mcp.json"
+PROJECT_MCP_CONFIG = PROJECT_ROOT / ".mcp.json"
+USER_SKILL_DOCS_DIR = QUANTBENCH_HOME / "skills"
+USER_SETTINGS_FILE = QUANTBENCH_HOME / "settings.json"
+PROJECT_SETTINGS_FILE = PROJECT_ROOT / ".quantbench" / "settings.json"
+SETTINGS_FILES = [USER_SETTINGS_FILE, PROJECT_SETTINGS_FILE]
 DEFAULT_COST_BPS = 5.0
 DEFAULT_MODEL = "deepseek/deepseek-chat"
 # Read fresh at Coordinator construction time (not cached into a module

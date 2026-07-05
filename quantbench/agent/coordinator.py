@@ -13,13 +13,14 @@ import pandas as pd
 from quantbench.agent.llm import LLMClient
 from quantbench.agent.prompts import SYSTEM_PROMPT
 from quantbench.artifact.store import ArtifactStore
-from quantbench.config import CRITIC_MODEL, DEFAULT_COST_BPS, DEFAULT_MODEL, MCP_SERVERS_CONFIG, MODEL_ENV, RUNS_DIR
+from quantbench.config import CRITIC_MODEL, DEFAULT_COST_BPS, DEFAULT_MODEL, MCP_SERVERS_CONFIG, MODEL_ENV, PROJECT_MCP_CONFIG, RUNS_DIR, USER_MCP_CONFIG
 from quantbench.config import (
     PORTFOLIO_MAX_WEIGHT,
     PORTFOLIO_TRAIN_TEST_SPLIT,
 )
 from quantbench.config import SCREEN_MAX_CANDIDATES, SCREEN_MAX_WORKERS
 from quantbench.config import SKILL_DOCS_DIR as DEFAULT_SKILL_DOCS_DIR
+from quantbench.config import USER_SKILL_DOCS_DIR as DEFAULT_USER_SKILL_DOCS_DIR
 from quantbench.data.cache import file_sha256
 from quantbench.data.exchange import SYNTHETIC_FALLBACK_SOURCE, fetch_ohlcv
 from quantbench.data.universe import apply_covers_delisted, build_universe
@@ -42,7 +43,7 @@ from quantbench.skilldocs.inject import build_augmented_system_prompt
 from quantbench.skilldocs.registry import SkillRegistryDocs
 from quantbench.skills.codeexec import run_signal_code_panel
 from quantbench.skills.data_quality import validate_universe_data
-from quantbench.skills.mcp_adapter import MCPClientManager, load_mcp_config
+from quantbench.skills.mcp_adapter import MCPClientManager, load_merged_mcp_config
 from quantbench.skills.plot import (
     save_drawdown_plot,
     save_equity_curve_plot,
@@ -622,10 +623,10 @@ def build_fork_previous_run_skill(execute_fork_callback: Callable[[str, str], st
     )
 
 
-def build_read_skill_file_skill(docs_dir: Path = DEFAULT_SKILL_DOCS_DIR) -> Skill:
+def build_read_skill_file_skill(docs_dir: Path | list[Path] = DEFAULT_SKILL_DOCS_DIR) -> Skill:
     def _read_skill_file(skill: str, path: str) -> dict[str, str]:
         try:
-            doc = SkillRegistryDocs(docs_dir).get(skill)
+            doc = SkillRegistryDocs(docs_dir, include_disabled=True).get(skill)
             skill_path = Path(doc.path)
             if skill_path.name != "SKILL.md":
                 return {"error": f"skill {skill} has no attachment directory"}
@@ -664,7 +665,7 @@ def _build_registry(
     registry.register(build_build_universe_skill(ctx, run))
     registry.register(build_run_cross_sectional_backtest_skill(ctx, run))
     registry.register(build_screen_factors_skill(ctx, run, run_store, critic_llm, model))
-    registry.register(build_read_skill_file_skill(DEFAULT_SKILL_DOCS_DIR))
+    registry.register(build_read_skill_file_skill([DEFAULT_USER_SKILL_DOCS_DIR, DEFAULT_SKILL_DOCS_DIR]))
     if fork_previous_run_callback is not None:
         registry.register(build_fork_previous_run_skill(fork_previous_run_callback))
     registry.register(build_optimize_portfolio_skill(run_store, critic_llm, model, run))
@@ -706,7 +707,6 @@ class Coordinator:
         # covers the Critic too unless QUANTBENCH_CRITIC_MODEL explicitly pins it.
         self.critic_llm = critic_llm or LLMClient(os.environ.get("QUANTBENCH_CRITIC_MODEL", self.model))
         self.critic_model = str(getattr(self.critic_llm, "model", CRITIC_MODEL))
-        self._mcp_configs = load_mcp_config(MCP_SERVERS_CONFIG)
         self.memory_store = memory_store or UserMemoryStore()
 
     def run(self, user_request: str, *, skill_names: list[str] | None = None) -> RunResult:
@@ -940,7 +940,14 @@ class Coordinator:
         if extra_llm_usage:
             ctx.llm_usage.extend(extra_llm_usage)
         ctx.memory_default_facts = self.memory_store.default_facts()
-        mcp_manager = MCPClientManager(self._mcp_configs, ctx) if self._mcp_configs else None
+        mcp_configs = load_merged_mcp_config(
+            [
+                ("legacy", MCP_SERVERS_CONFIG),
+                ("user", USER_MCP_CONFIG),
+                ("project", PROJECT_MCP_CONFIG),
+            ]
+        )
+        mcp_manager = MCPClientManager(mcp_configs, ctx) if mcp_configs else None
 
         def fork_previous_run(parent_run_id: str, modification: str) -> str:
             child_run = self.run_store.create_run(f"Fork {parent_run_id}: {modification}")
@@ -1276,11 +1283,12 @@ class Coordinator:
 
 
 def _select_skill_docs(user_request: str, skill_names: list[str] | None) -> list:
-    registry = SkillRegistryDocs(DEFAULT_SKILL_DOCS_DIR)
+    registry = SkillRegistryDocs([DEFAULT_USER_SKILL_DOCS_DIR, DEFAULT_SKILL_DOCS_DIR])
+    forced_registry = SkillRegistryDocs([DEFAULT_USER_SKILL_DOCS_DIR, DEFAULT_SKILL_DOCS_DIR], include_disabled=True)
     selected = []
     seen = set()
     for name in skill_names or []:
-        doc = registry.get(name)
+        doc = forced_registry.get(name)
         selected.append(doc)
         seen.add(doc.name)
     for doc in registry.match(user_request):
