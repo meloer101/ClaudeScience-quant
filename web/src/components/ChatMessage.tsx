@@ -1,4 +1,5 @@
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { RunDetail, RunEvent } from "../types";
 import { WarningBanner } from "./WarningBanner";
 import { ArtifactGallery } from "./ArtifactGallery";
@@ -87,7 +88,7 @@ export function ChatMessage({
             {isPortfolioRun && <PortfolioSummaryPanel runId={run.run_id} />}
             {hasBacktestResult && <MonitoringPanel runId={run.run_id} />}
             <div className="prose prose-sm max-w-none">
-              <Markdown>{run.summary}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]}>{run.summary}</Markdown>
             </div>
             <ArtifactGallery
               runId={run.run_id}
